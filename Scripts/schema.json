@@ -1,0 +1,135 @@
+[
+  {
+    "file_name": "admissions.csv",
+    "delimiter": ",",
+    "columns": {
+      "subject_id": "integer",
+      "hadm_id": "integer",
+      "admittime": "datetime",
+      "dischtime": "datetime",
+      "deathtime": "datetime",
+      "admission_type": "string",
+      "admit_provider_id": "string",
+      "admission_location": "string",
+      "discharge_location": "string",
+      "insurance": "string",
+      "language": "string",
+      "marital_status": "string",
+      "race": "string",
+      "edregtime": "datetime",
+      "edouttime": "datetime",
+      "hospital_expire_flag": "integer"
+    }
+  },
+  {
+    "file_name": "diagnoses_icd.csv",
+    "delimiter": ",",
+    "columns": {
+      "subject_id": "integer",
+      "hadm_id": "integer",
+      "seq_num": "integer",
+      "icd_code": "string",
+      "icd_version": "integer"
+    }
+  },
+  {
+    "file_name": "d_icd_diagnoses.csv",
+    "delimiter": ",",
+    "columns": {
+      "icd_code": "string",
+      "icd_version": "integer",
+      "long_title": "string"
+    }
+  },
+  {
+    "file_name": "d_icd_procedures.csv",
+    "delimiter": ",",
+    "columns": {
+      "icd_code": "integer",
+      "icd_version": "integer",
+      "long_title": "string"
+    }
+  },
+  {
+    "file_name": "patients.csv",
+    "delimiter": ",",
+    "columns": {
+      "subject_id": "integer",
+      "gender": "string",
+      "anchor_age": "integer",
+      "anchor_year": "integer",
+      "anchor_year_group": "string",
+      "dod": "string"
+    }
+  },
+  {
+    "file_name": "prescriptions.csv",
+    "delimiter": ",",
+    "columns": {
+      "subject_id": "integer",
+      "hadm_id": "integer",
+      "pharmacy_id": "integer",
+      "poe_id": "string",
+      "poe_seq": "float",
+      "order_provider_id": "string",
+      "starttime": "datetime",
+      "stoptime": "datetime",
+      "drug_type": "string",
+      "drug": "string",
+      "formulary_drug_cd": "string",
+      "gsn": "string",
+      "ndc": "float",
+      "prod_strength": "string",
+      "form_rx": "string",
+      "dose_val_rx": "string",
+      "dose_unit_rx": "string",
+      "form_val_disp": "float",
+      "form_unit_disp": "string",
+      "doses_per_24_hrs": "float",
+      "route": "string"
+    }
+  },
+  {
+    "file_name": "procedures_icd.csv",
+    "delimiter": ",",
+    "columns": {
+      "subject_id": "integer",
+      "hadm_id": "integer",
+      "seq_num": "integer",
+      "chartdate": "datetime",
+      "icd_code": "string",
+      "icd_version": "integer"
+    }
+  },
+  {
+    "file_name": "provider.csv",
+    "delimiter": ",",
+    "columns": {
+      "provider_id": "string"
+    }
+  },
+  {
+    "file_name": "services.csv",
+    "delimiter": ",",
+    "columns": {
+      "subject_id": "integer",
+      "hadm_id": "integer",
+      "transfertime": "datetime",
+      "prev_service": "string",
+      "curr_service": "string"
+    }
+  },
+  {
+    "file_name": "transfers.csv",
+    "delimiter": ",",
+    "columns": {
+      "subject_id": "integer",
+      "hadm_id": "float",
+      "transfer_id": "integer",
+      "eventtype": "string",
+      "careunit": "string",
+      "intime": "datetime",
+      "outtime": "datetime"
+    }
+  }
+]
