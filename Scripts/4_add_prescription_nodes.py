@@ -160,7 +160,7 @@ def create_prescription_nodes():
                 if presc_for_event.empty:
                     continue
 
-                # Create PrescriptionsBatch node (central node)
+                # Create PrescriptionsBatch node (central container) and link it to the Event
                 query_prescriptions_batch = """
                 MATCH (e {event_id: $event_id})
                 WHERE e:UnitAdmission OR e:EmergencyDepartment OR e:Discharge
@@ -170,28 +170,52 @@ def create_prescription_nodes():
                 """
                 session.run(query_prescriptions_batch, event_id=event_id)
 
-                # Group prescriptions by starttime to create Prescription nodes
+                # Group prescriptions by starttime to create separate Prescription nodes
                 prescription_groups = presc_for_event.groupby('starttime')
                 prescription_counter = 1
                 
                 for starttime, prescription_medicines in prescription_groups:
-                    # Create Prescription node
-                    prescription_props = {
-                        "event_id": event_id,
-                        "starttime": starttime.strftime('%Y-%m-%d %H:%M:%S'),
-                        "name": f"Prescription_{prescription_counter}",
-                        "medicine_count": len(prescription_medicines)
-                    }
-                    
+                    # Build array of formatted medicine strings for this starttime
+                    medicines = []
+                    for _, row in prescription_medicines.iterrows():
+                        # Format: "drug dose_val_rx dose_unit_rx route doses_per_24_hrs"
+                        # Example: "GuaiFENesin 5-10 mL PO/NG 6x/day"
+                        
+                        drug = str(row.get("drug")) if pd.notna(row.get("drug")) else "Unknown"
+                        dose_val_rx = str(row.get("dose_val_rx")) if pd.notna(row.get("dose_val_rx")) else ""
+                        dose_unit_rx = str(row.get("dose_unit_rx")) if pd.notna(row.get("dose_unit_rx")) else ""
+                        route = str(row.get("route")) if pd.notna(row.get("route")) else ""
+                        doses_per_24_hrs = row.get("doses_per_24_hrs") if pd.notna(row.get("doses_per_24_hrs")) else ""
+                        
+                        # Build dose part (e.g., "5-10 mL")
+                        dose_part = f"{dose_val_rx} {dose_unit_rx}".strip() if dose_val_rx or dose_unit_rx else ""
+                        
+                        # Build frequency part (e.g., "6x/day")
+                        frequency_part = f"{doses_per_24_hrs}x/day" if doses_per_24_hrs else ""
+                        
+                        # Combine all parts
+                        parts = [drug]
+                        if dose_part:
+                            parts.append(dose_part)
+                        if route:
+                            parts.append(route)
+                        if frequency_part:
+                            parts.append(frequency_part)
+                        
+                        medicine_str = " ".join(parts)
+                        medicines.append(medicine_str)
+
+                    # Create Prescription node with array of medicine strings for this starttime
                     query_prescription = """
-                    MERGE (p:Prescription {
-                        event_id: $event_id,
-                        starttime: $starttime
-                    })
-                    ON CREATE SET p.name = $name, p.medicine_count = $medicine_count
-                    ON MATCH SET p.name = $name, p.medicine_count = $medicine_count
+                    MERGE (p:Prescription {event_id: $event_id, starttime: $starttime})
+                    SET p.medicines = $medicines,
+                        p.medicine_count = $count,
+                        p.name = $name
                     """
-                    session.run(query_prescription, **prescription_props)
+                    session.run(query_prescription, event_id=event_id, 
+                               starttime=starttime.strftime('%Y-%m-%d %H:%M:%S'),
+                               medicines=medicines, count=len(medicines),
+                               name=f"Prescription_{prescription_counter}")
                     
                     # Link Prescription → PrescriptionsBatch
                     query_link_prescription = """
@@ -201,94 +225,6 @@ def create_prescription_nodes():
                     """
                     session.run(query_link_prescription, event_id=event_id, 
                                starttime=starttime.strftime('%Y-%m-%d %H:%M:%S'))
-                    
-                    # Create individual Medicine nodes
-                    medicine_counter = 1
-                    
-                    for row_idx, row in prescription_medicines.iterrows():
-                        raw_subject_id = str(row["subject_id"]).split("-")[0]
-                        try:
-                            subject_id = int(raw_subject_id)
-                        except ValueError:
-                            logger.warning(f"Skipping medicine with invalid subject_id: {row['subject_id']}")
-                            continue
-
-                        hadm_id = str(row["hadm_id"]).strip() if pd.notna(row["hadm_id"]) else None
-                        
-                        # Create unique medicine_id based on event_id, starttime, and counter
-                        # This ensures each row gets its own Medicine node
-                        medicine_id = f"{event_id}_{starttime.strftime('%Y%m%d%H%M%S')}_{medicine_counter}"
-                        
-                        # Extract poe_id and pharmacy_id as properties (not as unique identifiers)
-                        poe_id = str(row["poe_id"]).strip() if pd.notna(row["poe_id"]) else None
-                        pharmacy_id = str(row["pharmacy_id"]).strip() if pd.notna(row["pharmacy_id"]) else None
-
-                        # Prepare all properties for Medicine node
-                        medicine_props = {
-                            "medicine_id": medicine_id,
-                            "poe_id": poe_id,
-                            "pharmacy_id": pharmacy_id,
-                            "subject_id": subject_id,
-                            "hadm_id": hadm_id,
-                            "poe_seq": int(row.get("poe_seq")) if pd.notna(row.get("poe_seq")) else None,
-                            "order_provider_id": str(row.get("order_provider_id")) if pd.notna(row.get("order_provider_id")) else None,
-                            "starttime": row["starttime"].strftime("%Y-%m-%d %H:%M:%S") if pd.notna(row["starttime"]) else None,
-                            "stoptime": row["stoptime"].strftime("%Y-%m-%d %H:%M:%S") if pd.notna(row["stoptime"]) else None,
-                            "drug_type": str(row.get("drug_type")) if pd.notna(row.get("drug_type")) else None,
-                            "drug": str(row.get("drug")) if pd.notna(row.get("drug")) else None,
-                            "formulary_drug_cd": str(row.get("formulary_drug_cd")) if pd.notna(row.get("formulary_drug_cd")) else None,
-                            "gsn": str(row.get("gsn")) if pd.notna(row.get("gsn")) else None,
-                            "ndc": str(row.get("ndc")) if pd.notna(row.get("ndc")) else None,
-                            "prod_strength": str(row.get("prod_strength")) if pd.notna(row.get("prod_strength")) else None,
-                            "form_rx": str(row.get("form_rx")) if pd.notna(row.get("form_rx")) else None,
-                            "dose_val_rx": str(row.get("dose_val_rx")) if pd.notna(row.get("dose_val_rx")) else None,
-                            "dose_unit_rx": str(row.get("dose_unit_rx")) if pd.notna(row.get("dose_unit_rx")) else None,
-                            "form_val_disp": str(row.get("form_val_disp")) if pd.notna(row.get("form_val_disp")) else None,
-                            "form_unit_disp": str(row.get("form_unit_disp")) if pd.notna(row.get("form_unit_disp")) else None,
-                            "doses_per_24_hrs": float(row.get("doses_per_24_hrs")) if pd.notna(row.get("doses_per_24_hrs")) else None,
-                            "route": str(row.get("route")) if pd.notna(row.get("route")) else None,
-                            "name": f"Medicine_{medicine_counter}",
-                        }
-
-                        # Create/update Medicine node
-                        query_medicine = """
-                        MERGE (m:Medicine {medicine_id: $medicine_id})
-                        ON CREATE SET m.poe_id = $poe_id, m.subject_id = $subject_id, m.hadm_id = $hadm_id,
-                                      m.pharmacy_id = $pharmacy_id, m.poe_seq = $poe_seq,
-                                      m.order_provider_id = $order_provider_id,
-                                      m.starttime = $starttime, m.stoptime = $stoptime,
-                                      m.drug_type = $drug_type, m.drug = $drug,
-                                      m.formulary_drug_cd = $formulary_drug_cd, m.gsn = $gsn,
-                                      m.ndc = $ndc, m.prod_strength = $prod_strength,
-                                      m.form_rx = $form_rx, m.dose_val_rx = $dose_val_rx,
-                                      m.dose_unit_rx = $dose_unit_rx, m.form_val_disp = $form_val_disp,
-                                      m.form_unit_disp = $form_unit_disp, m.doses_per_24_hrs = $doses_per_24_hrs,
-                                      m.route = $route, m.name = $name
-                        ON MATCH SET  m.poe_id = $poe_id, m.subject_id = $subject_id, m.hadm_id = $hadm_id,
-                                      m.pharmacy_id = $pharmacy_id, m.poe_seq = $poe_seq,
-                                      m.order_provider_id = $order_provider_id,
-                                      m.starttime = $starttime, m.stoptime = $stoptime,
-                                      m.drug_type = $drug_type, m.drug = $drug,
-                                      m.formulary_drug_cd = $formulary_drug_cd, m.gsn = $gsn,
-                                      m.ndc = $ndc, m.prod_strength = $prod_strength,
-                                      m.form_rx = $form_rx, m.dose_val_rx = $dose_val_rx,
-                                      m.dose_unit_rx = $dose_unit_rx, m.form_val_disp = $form_val_disp,
-                                      m.form_unit_disp = $form_unit_disp, m.doses_per_24_hrs = $doses_per_24_hrs,
-                                      m.route = $route, m.name = $name
-                        """
-                        session.run(query_medicine, **medicine_props)
-
-                        # Link Medicine → Prescription
-                        query_link_medicine = """
-                        MATCH (p:Prescription {event_id: $event_id, starttime: $starttime})
-                        MATCH (m:Medicine {medicine_id: $medicine_id})
-                        MERGE (p)-[:HAS_MEDICINE]->(m)
-                        """
-                        session.run(query_link_medicine, event_id=event_id, 
-                                   starttime=starttime.strftime('%Y-%m-%d %H:%M:%S'),
-                                   medicine_id=medicine_id)
-
-                        medicine_counter += 1
                     
                     prescription_counter += 1
                 

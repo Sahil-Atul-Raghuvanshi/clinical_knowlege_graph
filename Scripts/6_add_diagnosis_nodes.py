@@ -79,52 +79,22 @@ def create_diagnosis_nodes():
                 if diags_for_admission.empty:
                     continue
 
-                # Create DiagnosesBatch node and link it to the Discharge
-                query_batch = """
-                MATCH (d:Discharge {event_id:$event_id})
-                MERGE (db:DiagnosesBatch {event_id:$event_id, hadm_id:$hadm_id, subject_id:$subject_id})
-                ON CREATE SET db.name = "Diagnoses", db.diagnosis_count = $count
-                ON MATCH SET db.diagnosis_count = $count
-                MERGE (d)-[:HAS_DIAGNOSES]->(db)
-                """
-                session.run(query_batch, event_id=event_id, hadm_id=hadm_id_int, subject_id=subject_id_int, count=len(diags_for_admission))
-
-                # Add diagnosis nodes
-                diag_counter = 1
+                # Build array of diagnosis titles
+                diagnosis_titles = []
                 for _, row in diags_for_admission.iterrows():
-                    diag_props = {
-                        "subject_id": int(row["subject_id"]),
-                        "hadm_id": int(row["hadm_id"]),
-                        "seq_num": int(row["seq_num"]),
-                        "icd_code": str(row["icd_code"]),
-                        "icd_version": str(row["icd_version"]),
-                        "title": str(row["long_title"]) if pd.notna(row["long_title"]) else "Unknown",
-                        "name": f"Diagnosis_{diag_counter}"
-                    }
+                    title = str(row["long_title"]) if pd.notna(row["long_title"]) else "Unknown"
+                    diagnosis_titles.append(title)
 
-                    query_diag = """
-                    MERGE (d:Diagnosis {
-                        subject_id:$subject_id,
-                        hadm_id:$hadm_id,
-                        seq_num:$seq_num,
-                        icd_code:$icd_code,
-                        icd_version:$icd_version
-                    })
-                    ON CREATE SET d.title=$title, d.name=$name
-                    ON MATCH SET d.title=$title, d.name=$name
-                    """
-                    session.run(query_diag, **diag_props)
-
-                    # Link Diagnosis → DiagnosesBatch
-                    query_link = """
-                    MATCH (db:DiagnosesBatch {event_id:$event_id, hadm_id:$hadm_id, subject_id:$subject_id})
-                    MATCH (d:Diagnosis {subject_id:$subject_id, hadm_id:$hadm_id, seq_num:$seq_num, icd_code:$icd_code})
-                    MERGE (db)-[:HAS_DIAGNOSIS]->(d)
-                    """
-                    session.run(query_link, event_id=event_id, hadm_id=hadm_id_int, subject_id=subject_id_int, 
-                                seq_num=int(row["seq_num"]), icd_code=str(row["icd_code"]))
-
-                    diag_counter += 1
+                # Create Diagnosis node with array of titles and link it to the Discharge
+                query_diagnosis = """
+                MATCH (d:Discharge {event_id:$event_id})
+                MERGE (diag:Diagnosis {event_id:$event_id, hadm_id:$hadm_id, subject_id:$subject_id})
+                SET diag.titles = $titles,
+                    diag.diagnosis_count = $count
+                MERGE (d)-[:HAS_DIAGNOSES]->(diag)
+                """
+                session.run(query_diagnosis, event_id=event_id, hadm_id=hadm_id_int, 
+                           subject_id=subject_id_int, titles=diagnosis_titles, count=len(diags_for_admission))
 
                 logger.info(f"Added {len(diags_for_admission)} diagnoses for discharge event {event_id} (admission {hadm_id})")
 
