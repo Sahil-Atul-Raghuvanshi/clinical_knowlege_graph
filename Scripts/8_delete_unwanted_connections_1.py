@@ -85,7 +85,29 @@ with driver.session() as session:
     count6 = result6.single()["deleted_count"]
     logger.info(f"Deleted {count6} HAS_PROCEDURES from LabEvents to Procedures")
     
-    total = count1 + count2 + count3 + count4 + count5 + count6
+    # Delete ANY connections FROM ProcedureDate TO LabEvents
+    query7 = """
+    MATCH (pd:ProcedureDate)-[r]-(lab)
+    WHERE (lab:LabEvents OR lab:LabEventsBatch OR lab:Collection OR lab:Specimen OR lab:LabEvent)
+    DELETE r
+    RETURN count(r) as deleted_count
+    """
+    result7 = session.run(query7)
+    count7 = result7.single()["deleted_count"]
+    logger.info(f"Deleted {count7} connections between ProcedureDate and LabEvents")
+    
+    # Delete ANY connections FROM ProcedureDate TO Prescriptions
+    query8 = """
+    MATCH (pd:ProcedureDate)-[r]-(presc)
+    WHERE (presc:Prescription OR presc:PrescriptionBatch OR presc:PrescriptionsBatch OR presc:Medicine)
+    DELETE r
+    RETURN count(r) as deleted_count
+    """
+    result8 = session.run(query8)
+    count8 = result8.single()["deleted_count"]
+    logger.info(f"Deleted {count8} connections between ProcedureDate and Prescriptions")
+    
+    total = count1 + count2 + count3 + count4 + count5 + count6 + count7 + count8
     logger.info(f"\nTotal cross-connections deleted: {total}")
 
 driver.close()

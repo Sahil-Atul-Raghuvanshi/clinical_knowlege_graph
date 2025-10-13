@@ -97,7 +97,31 @@ def create_procedure_nodes():
             if count4 > 0:
                 logger.info(f"Deleted {count4} connections between Procedures and LabEvents")
             
-            total_deleted = count1 + count2 + count3 + count4
+            # Delete ANY connections between ProcedureDate and LabEvents
+            query5 = """
+            MATCH (pd:ProcedureDate)-[r]-(lab)
+            WHERE (lab:LabEvents OR lab:LabEventsBatch OR lab:Collection OR lab:Specimen OR lab:LabEvent)
+            DELETE r
+            RETURN count(r) as deleted_count
+            """
+            result5 = session.run(query5)
+            count5 = result5.single()["deleted_count"]
+            if count5 > 0:
+                logger.info(f"Deleted {count5} connections between ProcedureDate and LabEvents")
+            
+            # Delete ANY connections between ProcedureDate and Prescriptions
+            query6 = """
+            MATCH (pd:ProcedureDate)-[r]-(presc)
+            WHERE (presc:Prescription OR presc:PrescriptionBatch OR presc:PrescriptionsBatch OR presc:Medicine)
+            DELETE r
+            RETURN count(r) as deleted_count
+            """
+            result6 = session.run(query6)
+            count6 = result6.single()["deleted_count"]
+            if count6 > 0:
+                logger.info(f"Deleted {count6} connections between ProcedureDate and Prescriptions")
+            
+            total_deleted = count1 + count2 + count3 + count4 + count5 + count6
             if total_deleted > 0:
                 logger.info(f"Total cross-connections deleted: {total_deleted}")
             else:
@@ -155,47 +179,82 @@ def create_procedure_nodes():
                 """
                 session.run(query_batch, event_id=event_id, hadm_id=hadm_id_int, subject_id=subject_id_int)
 
-                # Add procedure nodes
-                proc_counter = 1
-                for _, row in procs_for_event.iterrows():
-                    proc_props = {
-                        "subject_id": int(row["subject_id"]),
-                        "hadm_id": int(row["hadm_id"]),
-                        "seq_num": int(row["seq_num"]),
-                        "chartdate": str(row["chartdate"]),
-                        "icd_code": str(row["icd_code"]),
-                        "icd_version": str(row["icd_version"]),
-                        "title": str(row["long_title"]) if pd.notna(row["long_title"]) else "Unknown",
-                        "name": f"Procedure_{proc_counter}"
+                # Group procedures by chartdate to create ProcedureDate nodes
+                procedure_groups = procs_for_event.groupby('chartdate')
+                date_counter = 1
+                
+                for chartdate, procedures_on_date in procedure_groups:
+                    # Create ProcedureDate node
+                    procedure_date_props = {
+                        "event_id": event_id,
+                        "chartdate": str(chartdate),
+                        "name": f"ProcedureDate_{date_counter}",
+                        "procedure_count": len(procedures_on_date)
                     }
-
-                    query_proc = """
-                    MERGE (p:Procedure {
-                        subject_id:$subject_id,
-                        hadm_id:$hadm_id,
-                        seq_num:$seq_num,
-                        icd_code:$icd_code,
-                        icd_version:$icd_version
+                    
+                    query_procedure_date = """
+                    MERGE (pd:ProcedureDate {
+                        event_id: $event_id,
+                        chartdate: $chartdate
                     })
-                    ON CREATE SET p.chartdate=$chartdate, p.title=$title, p.name=$name
-                    ON MATCH SET  p.chartdate=$chartdate, p.title=$title, p.name=$name
+                    ON CREATE SET pd.name = $name, pd.procedure_count = $procedure_count
+                    ON MATCH SET pd.name = $name, pd.procedure_count = $procedure_count
                     """
-                    session.run(query_proc, **proc_props)
-
-                    # Link Procedure → ProceduresBatch
-                    query_link = """
-                    MATCH (pb:ProceduresBatch {event_id:$event_id, hadm_id:$hadm_id, subject_id:$subject_id})
-                    MATCH (p:Procedure {subject_id:$subject_id, hadm_id:$hadm_id, seq_num:$seq_num, icd_code:$icd_code})
-                    MERGE (pb)-[:HAS_PROCEDURE]->(p)
+                    session.run(query_procedure_date, **procedure_date_props)
+                    
+                    # Link ProcedureDate → ProceduresBatch
+                    query_link_date = """
+                    MATCH (pb:ProceduresBatch {event_id: $event_id})
+                    MATCH (pd:ProcedureDate {event_id: $event_id, chartdate: $chartdate})
+                    MERGE (pb)-[:HAS_DAY]->(pd)
                     """
-                    session.run(query_link, event_id=event_id, hadm_id=hadm_id_int,
-                                subject_id=subject_id_int, seq_num=int(row["seq_num"]), icd_code=str(row["icd_code"]))
+                    session.run(query_link_date, event_id=event_id, chartdate=str(chartdate))
+                    
+                    # Create individual Procedure nodes
+                    proc_counter = 1
+                    
+                    for _, row in procedures_on_date.iterrows():
+                        proc_props = {
+                            "subject_id": int(row["subject_id"]),
+                            "hadm_id": int(row["hadm_id"]),
+                            "seq_num": int(row["seq_num"]),
+                            "chartdate": str(row["chartdate"]),
+                            "icd_code": str(row["icd_code"]),
+                            "icd_version": str(row["icd_version"]),
+                            "title": str(row["long_title"]) if pd.notna(row["long_title"]) else "Unknown",
+                            "name": f"Procedure_{proc_counter}"
+                        }
 
-                    proc_counter += 1
+                        query_proc = """
+                        MERGE (p:Procedure {
+                            subject_id:$subject_id,
+                            hadm_id:$hadm_id,
+                            seq_num:$seq_num,
+                            icd_code:$icd_code,
+                            icd_version:$icd_version
+                        })
+                        ON CREATE SET p.chartdate=$chartdate, p.title=$title, p.name=$name
+                        ON MATCH SET  p.chartdate=$chartdate, p.title=$title, p.name=$name
+                        """
+                        session.run(query_proc, **proc_props)
+
+                        # Link Procedure → ProcedureDate
+                        query_link = """
+                        MATCH (pd:ProcedureDate {event_id: $event_id, chartdate: $chartdate})
+                        MATCH (p:Procedure {subject_id:$subject_id, hadm_id:$hadm_id, seq_num:$seq_num, icd_code:$icd_code})
+                        MERGE (pd)-[:HAS_PROCEDURE]->(p)
+                        """
+                        session.run(query_link, event_id=event_id, chartdate=str(row["chartdate"]),
+                                    subject_id=int(row["subject_id"]), hadm_id=int(row["hadm_id"]),
+                                    seq_num=int(row["seq_num"]), icd_code=str(row["icd_code"]))
+
+                        proc_counter += 1
+                    
+                    date_counter += 1
 
                 # No cross-relationships: ProceduresBatch isolated from PrescriptionBatch and LabEventsBatch per user request
 
-                logger.info(f"Added {len(procs_for_event)} procedures for event {event_id}")
+                logger.info(f"Added {len(procs_for_event)} procedures in {len(procedure_groups)} dates for event {event_id}")
 
         logger.info("All procedures processed successfully!")
 
