@@ -41,6 +41,9 @@ def create_labevent_nodes():
 
     # Merge to add lab item details
     labevents_df = labevents_df.merge(labitems_lookup, on="itemid", how="left")
+    
+    # Convert charttime to datetime for proper sorting
+    labevents_df['charttime'] = pd.to_datetime(labevents_df['charttime'])
 
     try:
         with driver.session() as session:
@@ -79,109 +82,162 @@ def create_labevent_nodes():
                 labevents_for_event = labevents_df[
                     (labevents_df["subject_id"] == subject_id_int) &
                     (labevents_df["hadm_id"] == hadm_id_int) &
-                    (pd.to_datetime(labevents_df["charttime"]) >= intime) &
-                    (pd.to_datetime(labevents_df["charttime"]) <= outtime)
+                    (labevents_df["charttime"] >= intime) &
+                    (labevents_df["charttime"] <= outtime)
                 ].sort_values(by=["charttime", "labevent_id"])
 
                 if labevents_for_event.empty:
                     continue
 
-                # Create LabEventsBatch node and link it to the Event (no cross-links to other batch types)
-                query_batch = """
+                # Create LabEvents node (central node) and link it to the Event
+                query_labevents = """
                 MATCH (e {event_id:$event_id})
-                WHERE NOT e:PrescriptionBatch AND NOT e:ProceduresBatch AND NOT e:LabEventsBatch
-                MERGE (leb:LabEventsBatch {event_id:$event_id, hadm_id:$hadm_id, subject_id:$subject_id})
-                ON CREATE SET leb.name = "LabEvents"
-                MERGE (e)-[:HAS_LAB_EVENTS]->(leb)
+                WHERE NOT e:PrescriptionBatch AND NOT e:ProceduresBatch AND NOT e:LabEventsBatch AND NOT e:LabEvents
+                MERGE (le:LabEvents {event_id:$event_id, hadm_id:$hadm_id, subject_id:$subject_id})
+                ON CREATE SET le.name = "LabEvents"
+                MERGE (e)-[:HAS_LAB_EVENTS]->(le)
                 """
-                session.run(query_batch, event_id=event_id, hadm_id=hadm_id_int, subject_id=subject_id_int)
+                session.run(query_labevents, event_id=event_id, hadm_id=hadm_id_int, subject_id=subject_id_int)
 
-                # Process lab events
-                labevent_counter = 1
-                processed_items = set()  # Track which lab items we've already created
+                # Group lab events by charttime to create Collections
+                collections = labevents_for_event.groupby('charttime')
+                collection_counter = 1
                 
-                for _, row in labevents_for_event.iterrows():
-                    # Create LabItem node (one per unique itemid)
-                    itemid = int(row["itemid"])
-                    if itemid not in processed_items:
-                        labitem_props = {
-                            "itemid": itemid,
-                            "label": str(row["label"]) if pd.notna(row["label"]) else "Unknown",
-                            "fluid": str(row["fluid"]) if pd.notna(row["fluid"]) else "Unknown",
-                            "category": str(row["category"]) if pd.notna(row["category"]) else "Unknown",
-                            "name": f"LabItem_{itemid}"
-                        }
-
-                        query_labitem = """
-                        MERGE (li:LabItem {itemid:$itemid})
-                        ON CREATE SET li.label=$label, li.fluid=$fluid, li.category=$category, li.name=$name
-                        ON MATCH SET li.label=$label, li.fluid=$fluid, li.category=$category, li.name=$name
-                        """
-                        session.run(query_labitem, **labitem_props)
-                        processed_items.add(itemid)
-
-                    # Create LabEvent node
-                    labevent_props = {
-                        "labevent_id": int(row["labevent_id"]),
-                        "subject_id": int(row["subject_id"]),
-                        "hadm_id": int(row["hadm_id"]),
-                        "specimen_id": int(row["specimen_id"]) if pd.notna(row["specimen_id"]) else None,
-                        "itemid": itemid,
-                        "order_provider_id": str(row["order_provider_id"]) if pd.notna(row["order_provider_id"]) else None,
-                        "charttime": str(row["charttime"]),
-                        "storetime": str(row["storetime"]) if pd.notna(row["storetime"]) else None,
-                        "value": str(row["value"]) if pd.notna(row["value"]) else None,
-                        "valuenum": float(row["valuenum"]) if pd.notna(row["valuenum"]) else None,
-                        "valueuom": str(row["valueuom"]) if pd.notna(row["valueuom"]) else None,
-                        "ref_range_lower": float(row["ref_range_lower"]) if pd.notna(row["ref_range_lower"]) else None,
-                        "ref_range_upper": float(row["ref_range_upper"]) if pd.notna(row["ref_range_upper"]) else None,
-                        "flag": str(row["flag"]) if pd.notna(row["flag"]) else None,
-                        "priority": str(row["priority"]) if pd.notna(row["priority"]) else None,
-                        "comments": str(row["comments"]) if pd.notna(row["comments"]) else None,
-                        "name": f"LabEvent_{labevent_counter}"
+                for charttime, collection_events in collections:
+                    # Create Collection node
+                    collection_props = {
+                        "event_id": event_id,
+                        "hadm_id": hadm_id_int,
+                        "subject_id": subject_id_int,
+                        "charttime": charttime.strftime('%Y-%m-%d %H:%M:%S'),
+                        "name": f"Collection_{collection_counter}"
                     }
-
-                    query_labevent = """
-                    MERGE (le:LabEvent {
-                        labevent_id:$labevent_id,
-                        subject_id:$subject_id,
+                    
+                    query_collection = """
+                    MERGE (c:Collection {
+                        event_id:$event_id,
                         hadm_id:$hadm_id,
-                        itemid:$itemid
+                        subject_id:$subject_id,
+                        charttime:$charttime
                     })
-                    ON CREATE SET le.specimen_id=$specimen_id, le.order_provider_id=$order_provider_id,
-                                  le.charttime=$charttime, le.storetime=$storetime, le.value=$value,
-                                  le.valuenum=$valuenum, le.valueuom=$valueuom, le.ref_range_lower=$ref_range_lower,
-                                  le.ref_range_upper=$ref_range_upper, le.flag=$flag, le.priority=$priority,
-                                  le.comments=$comments, le.name=$name
-                    ON MATCH SET  le.specimen_id=$specimen_id, le.order_provider_id=$order_provider_id,
-                                  le.charttime=$charttime, le.storetime=$storetime, le.value=$value,
-                                  le.valuenum=$valuenum, le.valueuom=$valueuom, le.ref_range_lower=$ref_range_lower,
-                                  le.ref_range_upper=$ref_range_upper, le.flag=$flag, le.priority=$priority,
-                                  le.comments=$comments, le.name=$name
+                    ON CREATE SET c.name=$name
+                    ON MATCH SET c.name=$name
                     """
-                    session.run(query_labevent, **labevent_props)
-
-                    # Link LabEvent → LabEventsBatch
-                    query_link_batch = """
-                    MATCH (leb:LabEventsBatch {event_id:$event_id, hadm_id:$hadm_id, subject_id:$subject_id})
-                    MATCH (le:LabEvent {labevent_id:$labevent_id, subject_id:$subject_id, hadm_id:$hadm_id, itemid:$itemid})
-                    MERGE (leb)-[:HAS_LAB_EVENT]->(le)
+                    session.run(query_collection, **collection_props)
+                    
+                    # Link Collection → LabEvents
+                    query_link_collection = """
+                    MATCH (le:LabEvents {event_id:$event_id, hadm_id:$hadm_id, subject_id:$subject_id})
+                    MATCH (c:Collection {event_id:$event_id, hadm_id:$hadm_id, subject_id:$subject_id, charttime:$charttime})
+                    MERGE (le)-[:HAS_COLLECTION]->(c)
                     """
-                    session.run(query_link_batch, event_id=event_id, hadm_id=hadm_id_int,
-                                subject_id=subject_id_int, labevent_id=int(row["labevent_id"]), itemid=itemid)
+                    session.run(query_link_collection, event_id=event_id, hadm_id=hadm_id_int,
+                               subject_id=subject_id_int, charttime=charttime.strftime('%Y-%m-%d %H:%M:%S'))
+                    
+                    # Group collection events by specimen_id to create Specimens
+                    specimens = collection_events.groupby('specimen_id')
+                    
+                    for specimen_id, specimen_events in specimens:
+                        if pd.isna(specimen_id):
+                            continue
+                            
+                        # Create Specimen node
+                        specimen_props = {
+                            "event_id": event_id,
+                            "hadm_id": hadm_id_int,
+                            "subject_id": subject_id_int,
+                            "charttime": charttime.strftime('%Y-%m-%d %H:%M:%S'),
+                            "specimen_id": int(specimen_id),
+                            "name": f"Specimen_{int(specimen_id)}"
+                        }
+                        
+                        query_specimen = """
+                        MERGE (s:Specimen {
+                            event_id:$event_id,
+                            hadm_id:$hadm_id,
+                            subject_id:$subject_id,
+                            charttime:$charttime,
+                            specimen_id:$specimen_id
+                        })
+                        ON CREATE SET s.name=$name
+                        ON MATCH SET s.name=$name
+                        """
+                        session.run(query_specimen, **specimen_props)
+                        
+                        # Link Specimen → Collection
+                        query_link_specimen = """
+                        MATCH (c:Collection {event_id:$event_id, hadm_id:$hadm_id, subject_id:$subject_id, charttime:$charttime})
+                        MATCH (s:Specimen {event_id:$event_id, hadm_id:$hadm_id, subject_id:$subject_id, charttime:$charttime, specimen_id:$specimen_id})
+                        MERGE (c)-[:HAS_SPECIMEN]->(s)
+                        """
+                        session.run(query_link_specimen, event_id=event_id, hadm_id=hadm_id_int,
+                                   subject_id=subject_id_int, charttime=charttime.strftime('%Y-%m-%d %H:%M:%S'),
+                                   specimen_id=int(specimen_id))
+                        
+                        # Process individual lab events for this specimen
+                        labevent_counter = 1
+                        
+                        for _, row in specimen_events.iterrows():
+                            # Create LabEvent node with lab item data included
+                            labevent_props = {
+                                "labevent_id": int(row["labevent_id"]),
+                                "subject_id": int(row["subject_id"]),
+                                "hadm_id": int(row["hadm_id"]),
+                                "specimen_id": int(row["specimen_id"]) if pd.notna(row["specimen_id"]) else None,
+                                "itemid": int(row["itemid"]),
+                                "order_provider_id": str(row["order_provider_id"]) if pd.notna(row["order_provider_id"]) else None,
+                                "charttime": str(row["charttime"]),
+                                "storetime": str(row["storetime"]) if pd.notna(row["storetime"]) else None,
+                                "value": str(row["value"]) if pd.notna(row["value"]) else None,
+                                "valuenum": float(row["valuenum"]) if pd.notna(row["valuenum"]) else None,
+                                "valueuom": str(row["valueuom"]) if pd.notna(row["valueuom"]) else None,
+                                "ref_range_lower": float(row["ref_range_lower"]) if pd.notna(row["ref_range_lower"]) else None,
+                                "ref_range_upper": float(row["ref_range_upper"]) if pd.notna(row["ref_range_upper"]) else None,
+                                "flag": str(row["flag"]) if pd.notna(row["flag"]) else None,
+                                "priority": str(row["priority"]) if pd.notna(row["priority"]) else None,
+                                "comments": str(row["comments"]) if pd.notna(row["comments"]) else None,
+                                # Lab item properties included directly
+                                "item_label": str(row["label"]) if pd.notna(row["label"]) else "Unknown",
+                                "item_fluid": str(row["fluid"]) if pd.notna(row["fluid"]) else "Unknown",
+                                "item_category": str(row["category"]) if pd.notna(row["category"]) else "Unknown",
+                                "name": f"LabEvent_{labevent_counter}"
+                            }
 
-                    # Link LabEvent → LabItem (one-to-one relationship)
-                    query_link_item = """
-                    MATCH (le:LabEvent {labevent_id:$labevent_id, subject_id:$subject_id, hadm_id:$hadm_id, itemid:$itemid})
-                    MATCH (li:LabItem {itemid:$itemid})
-                    MERGE (le)-[:MEASURED]->(li)
-                    """
-                    session.run(query_link_item, labevent_id=int(row["labevent_id"]), 
-                                subject_id=subject_id_int, hadm_id=hadm_id_int, itemid=itemid)
+                            query_labevent = """
+                            MERGE (le:LabEvent {
+                                labevent_id:$labevent_id,
+                                subject_id:$subject_id,
+                                hadm_id:$hadm_id,
+                                itemid:$itemid
+                            })
+                            ON CREATE SET le.specimen_id=$specimen_id, le.order_provider_id=$order_provider_id,
+                                          le.charttime=$charttime, le.storetime=$storetime, le.value=$value,
+                                          le.valuenum=$valuenum, le.valueuom=$valueuom, le.ref_range_lower=$ref_range_lower,
+                                          le.ref_range_upper=$ref_range_upper, le.flag=$flag, le.priority=$priority,
+                                          le.comments=$comments, le.item_label=$item_label, le.item_fluid=$item_fluid,
+                                          le.item_category=$item_category, le.name=$name
+                            ON MATCH SET  le.specimen_id=$specimen_id, le.order_provider_id=$order_provider_id,
+                                          le.charttime=$charttime, le.storetime=$storetime, le.value=$value,
+                                          le.valuenum=$valuenum, le.valueuom=$valueuom, le.ref_range_lower=$ref_range_lower,
+                                          le.ref_range_upper=$ref_range_upper, le.flag=$flag, le.priority=$priority,
+                                          le.comments=$comments, le.item_label=$item_label, le.item_fluid=$item_fluid,
+                                          le.item_category=$item_category, le.name=$name
+                            """
+                            session.run(query_labevent, **labevent_props)
 
-                    labevent_counter += 1
+                            # Link LabEvent → Specimen
+                            query_link_labevent = """
+                            MATCH (s:Specimen {event_id:$event_id, hadm_id:$hadm_id, subject_id:$subject_id, charttime:$charttime, specimen_id:$specimen_id})
+                            MATCH (le:LabEvent {labevent_id:$labevent_id, subject_id:$subject_id, hadm_id:$hadm_id, itemid:$itemid})
+                            MERGE (s)-[:HAS_LAB_EVENT]->(le)
+                            """
+                            session.run(query_link_labevent, event_id=event_id, hadm_id=hadm_id_int,
+                                        subject_id=subject_id_int, charttime=charttime.strftime('%Y-%m-%d %H:%M:%S'),
+                                        specimen_id=int(specimen_id), labevent_id=int(row["labevent_id"]), itemid=int(row["itemid"]))
 
-                # No cross-relationships: LabEventsBatch isolated from PrescriptionBatch and ProceduresBatch per user request
+                            labevent_counter += 1
+                    
+                    collection_counter += 1
                 
                 logger.info(f"Added {len(labevents_for_event)} lab events for event {event_id}")
 

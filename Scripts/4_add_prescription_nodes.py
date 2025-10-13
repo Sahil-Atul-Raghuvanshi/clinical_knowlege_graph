@@ -46,6 +46,9 @@ def create_prescription_nodes():
         presc_df = presc_df.drop_duplicates(subset=['poe_id'], keep='first')
         final_count = len(presc_df)
         logger.info(f"Removed {initial_count - final_count} duplicate prescriptions. {final_count} unique prescriptions remaining.")
+        
+        # Sort by starttime for proper ordering
+        presc_df = presc_df.sort_values(by='starttime')
 
         with driver.session() as session:
             # Fetch all event nodes with intime/outtime
@@ -76,100 +79,139 @@ def create_prescription_nodes():
                 # Filter prescriptions within the event period
                 presc_for_event = presc_df[
                     (presc_df["starttime"] >= intime) & (presc_df["starttime"] <= outtime)
-                ]
+                ].sort_values(by="starttime")
 
                 if presc_for_event.empty:
                     continue
 
-                # Create PrescriptionBatch node with unique identifier
-                batch_id = f"prescription_batch_{event_id}"
-                logger.info(f"Creating PrescriptionBatch with batch_id: {batch_id}, event_id: {event_id}")
-                query_batch = """
-                MERGE (pb:PrescriptionBatch {batch_id: $batch_id})
-                ON CREATE SET pb.event_id = $event_id, pb.prescription_count = $count, pb.name = "Prescriptions"
-                ON MATCH SET pb.prescription_count = $count, pb.name = "Prescriptions"
-                """
-                session.run(query_batch, batch_id=batch_id, event_id=event_id, count=len(presc_for_event))
-
-                # Link Event → PrescriptionBatch (ENSURE no self-loop and no cross-links to other batch types)
-                query_link_batch = """
+                # Create PrescriptionsBatch node (central node)
+                query_prescriptions_batch = """
                 MATCH (e {event_id: $event_id})
-                MATCH (pb:PrescriptionBatch {batch_id: $batch_id})
-                WHERE e <> pb AND NOT e:PrescriptionBatch AND NOT e:ProceduresBatch AND NOT e:LabEventsBatch
+                WHERE NOT e:PrescriptionBatch AND NOT e:PrescriptionsBatch AND NOT e:ProceduresBatch AND NOT e:LabEventsBatch AND NOT e:LabEvents
+                MERGE (pb:PrescriptionsBatch {event_id: $event_id})
+                ON CREATE SET pb.name = "PrescriptionsBatch"
                 MERGE (e)-[:HAS_PRESCRIPTIONS]->(pb)
                 """
-                session.run(query_link_batch, event_id=event_id, batch_id=batch_id)
+                session.run(query_prescriptions_batch, event_id=event_id)
 
-                # Sort prescriptions by starttime for consistent naming
-                presc_for_event_sorted = presc_for_event.sort_values(by="starttime", ascending=True).reset_index(drop=True)
-
-                # Reset counter per batch (so numbering starts from 1 each time)
-                counter = 1
-
-                # Create individual prescription nodes and link → PrescriptionBatch
-                for _, row in presc_for_event_sorted.iterrows():
-                    prescription_id = str(row["poe_id"]).strip() if pd.notna(row["poe_id"]) else None
-                    if not prescription_id:
-                        continue
-
-                    raw_subject_id = str(row["subject_id"]).split("-")[0]
-                    try:
-                        subject_id = int(raw_subject_id)
-                    except ValueError:
-                        logger.warning(f"Skipping prescription with invalid subject_id: {row['subject_id']}")
-                        continue
-
-                    hadm_id = str(row["hadm_id"]).strip() if pd.notna(row["hadm_id"]) else None
-
-                    # Prepare all properties dynamically
-                    presc_props = {
-                        "poe_id": prescription_id,
-                        "subject_id": subject_id,
-                        "hadm_id": hadm_id,
-                        "pharmacy_id": row.get("pharmacy_id"),
-                        "poe_seq": row.get("poe_seq"),
-                        "order_provider_id": row.get("order_provider_id"),
-                        "starttime": row["starttime"].strftime("%Y-%m-%d %H:%M:%S") if pd.notna(row["starttime"]) else None,
-                        "stoptime": row["stoptime"].strftime("%Y-%m-%d %H:%M:%S") if pd.notna(row["stoptime"]) else None,
-                        "drug_type": row.get("drug_type"),
-                        "drug": row.get("drug"),
-                        "formulary_drug_cd": row.get("formulary_drug_cd"),
-                        "gsn": row.get("gsn"),
-                        "ndc": row.get("ndc"),
-                        "prod_strength": row.get("prod_strength"),
-                        "form_rx": row.get("form_rx"),
-                        "dose_val_rx": row.get("dose_val_rx"),
-                        "dose_unit_rx": row.get("dose_unit_rx"),
-                        "form_val_disp": row.get("form_val_disp"),
-                        "form_unit_disp": row.get("form_unit_disp"),
-                        "doses_per_24_hrs": row.get("doses_per_24_hrs"),
-                        "route": row.get("route"),
-                        "name": f"Prescription_{counter}",
-                    }
-
-                    # Create/update Prescription node
-                    props_cypher = ", ".join([f"p.{k} = ${k}" for k in presc_props.keys()])
-                    query_presc = f"""
-                    MERGE (p:Prescription {{poe_id: $poe_id}})
-                    ON CREATE SET {props_cypher}
-                    ON MATCH SET {props_cypher}
-                    """
-                    session.run(query_presc, **presc_props)
-
-                    # Link Prescription → PrescriptionBatch
-                    query_link_presc = """
-                    MATCH (p:Prescription {poe_id: $poe_id})
-                    MATCH (pb:PrescriptionBatch {batch_id: $batch_id})
-                    WHERE p <> pb
-                    MERGE (p)-[:PART_OF_BATCH]->(pb)
-                    """
-                    session.run(query_link_presc, poe_id=prescription_id, batch_id=batch_id)
-
-                    counter += 1  # increment within batch
-
-                # No cross-relationships: PrescriptionBatch isolated from ProceduresBatch and LabEventsBatch per user request
+                # Group prescriptions by starttime to create Prescription nodes
+                prescription_groups = presc_for_event.groupby('starttime')
+                prescription_counter = 1
                 
-                logger.info(f"Processed {len(presc_for_event_sorted)} prescriptions for event {event_id}")
+                for starttime, prescription_medicines in prescription_groups:
+                    # Create Prescription node
+                    prescription_props = {
+                        "event_id": event_id,
+                        "starttime": starttime.strftime('%Y-%m-%d %H:%M:%S'),
+                        "name": f"Prescription_{prescription_counter}",
+                        "medicine_count": len(prescription_medicines)
+                    }
+                    
+                    query_prescription = """
+                    MERGE (p:Prescription {
+                        event_id: $event_id,
+                        starttime: $starttime
+                    })
+                    ON CREATE SET p.name = $name, p.medicine_count = $medicine_count
+                    ON MATCH SET p.name = $name, p.medicine_count = $medicine_count
+                    """
+                    session.run(query_prescription, **prescription_props)
+                    
+                    # Link Prescription → PrescriptionsBatch
+                    query_link_prescription = """
+                    MATCH (pb:PrescriptionsBatch {event_id: $event_id})
+                    MATCH (p:Prescription {event_id: $event_id, starttime: $starttime})
+                    MERGE (pb)-[:HAS_PRESCRIPTION]->(p)
+                    """
+                    session.run(query_link_prescription, event_id=event_id, 
+                               starttime=starttime.strftime('%Y-%m-%d %H:%M:%S'))
+                    
+                    # Create individual Medicine nodes
+                    medicine_counter = 1
+                    
+                    for _, row in prescription_medicines.iterrows():
+                        prescription_id = str(row["poe_id"]).strip() if pd.notna(row["poe_id"]) else None
+                        if not prescription_id:
+                            continue
+
+                        raw_subject_id = str(row["subject_id"]).split("-")[0]
+                        try:
+                            subject_id = int(raw_subject_id)
+                        except ValueError:
+                            logger.warning(f"Skipping medicine with invalid subject_id: {row['subject_id']}")
+                            continue
+
+                        hadm_id = str(row["hadm_id"]).strip() if pd.notna(row["hadm_id"]) else None
+
+                        # Prepare all properties for Medicine node
+                        medicine_props = {
+                            "poe_id": prescription_id,
+                            "subject_id": subject_id,
+                            "hadm_id": hadm_id,
+                            "pharmacy_id": str(row.get("pharmacy_id")) if pd.notna(row.get("pharmacy_id")) else None,
+                            "poe_seq": int(row.get("poe_seq")) if pd.notna(row.get("poe_seq")) else None,
+                            "order_provider_id": str(row.get("order_provider_id")) if pd.notna(row.get("order_provider_id")) else None,
+                            "starttime": row["starttime"].strftime("%Y-%m-%d %H:%M:%S") if pd.notna(row["starttime"]) else None,
+                            "stoptime": row["stoptime"].strftime("%Y-%m-%d %H:%M:%S") if pd.notna(row["stoptime"]) else None,
+                            "drug_type": str(row.get("drug_type")) if pd.notna(row.get("drug_type")) else None,
+                            "drug": str(row.get("drug")) if pd.notna(row.get("drug")) else None,
+                            "formulary_drug_cd": str(row.get("formulary_drug_cd")) if pd.notna(row.get("formulary_drug_cd")) else None,
+                            "gsn": str(row.get("gsn")) if pd.notna(row.get("gsn")) else None,
+                            "ndc": str(row.get("ndc")) if pd.notna(row.get("ndc")) else None,
+                            "prod_strength": str(row.get("prod_strength")) if pd.notna(row.get("prod_strength")) else None,
+                            "form_rx": str(row.get("form_rx")) if pd.notna(row.get("form_rx")) else None,
+                            "dose_val_rx": str(row.get("dose_val_rx")) if pd.notna(row.get("dose_val_rx")) else None,
+                            "dose_unit_rx": str(row.get("dose_unit_rx")) if pd.notna(row.get("dose_unit_rx")) else None,
+                            "form_val_disp": str(row.get("form_val_disp")) if pd.notna(row.get("form_val_disp")) else None,
+                            "form_unit_disp": str(row.get("form_unit_disp")) if pd.notna(row.get("form_unit_disp")) else None,
+                            "doses_per_24_hrs": float(row.get("doses_per_24_hrs")) if pd.notna(row.get("doses_per_24_hrs")) else None,
+                            "route": str(row.get("route")) if pd.notna(row.get("route")) else None,
+                            "name": f"Medicine_{medicine_counter}",
+                        }
+
+                        # Create/update Medicine node
+                        query_medicine = """
+                        MERGE (m:Medicine {poe_id: $poe_id})
+                        ON CREATE SET m.subject_id = $subject_id, m.hadm_id = $hadm_id,
+                                      m.pharmacy_id = $pharmacy_id, m.poe_seq = $poe_seq,
+                                      m.order_provider_id = $order_provider_id,
+                                      m.starttime = $starttime, m.stoptime = $stoptime,
+                                      m.drug_type = $drug_type, m.drug = $drug,
+                                      m.formulary_drug_cd = $formulary_drug_cd, m.gsn = $gsn,
+                                      m.ndc = $ndc, m.prod_strength = $prod_strength,
+                                      m.form_rx = $form_rx, m.dose_val_rx = $dose_val_rx,
+                                      m.dose_unit_rx = $dose_unit_rx, m.form_val_disp = $form_val_disp,
+                                      m.form_unit_disp = $form_unit_disp, m.doses_per_24_hrs = $doses_per_24_hrs,
+                                      m.route = $route, m.name = $name
+                        ON MATCH SET  m.subject_id = $subject_id, m.hadm_id = $hadm_id,
+                                      m.pharmacy_id = $pharmacy_id, m.poe_seq = $poe_seq,
+                                      m.order_provider_id = $order_provider_id,
+                                      m.starttime = $starttime, m.stoptime = $stoptime,
+                                      m.drug_type = $drug_type, m.drug = $drug,
+                                      m.formulary_drug_cd = $formulary_drug_cd, m.gsn = $gsn,
+                                      m.ndc = $ndc, m.prod_strength = $prod_strength,
+                                      m.form_rx = $form_rx, m.dose_val_rx = $dose_val_rx,
+                                      m.dose_unit_rx = $dose_unit_rx, m.form_val_disp = $form_val_disp,
+                                      m.form_unit_disp = $form_unit_disp, m.doses_per_24_hrs = $doses_per_24_hrs,
+                                      m.route = $route, m.name = $name
+                        """
+                        session.run(query_medicine, **medicine_props)
+
+                        # Link Medicine → Prescription
+                        query_link_medicine = """
+                        MATCH (p:Prescription {event_id: $event_id, starttime: $starttime})
+                        MATCH (m:Medicine {poe_id: $poe_id})
+                        MERGE (p)-[:HAS_MEDICINE]->(m)
+                        """
+                        session.run(query_link_medicine, event_id=event_id, 
+                                   starttime=starttime.strftime('%Y-%m-%d %H:%M:%S'),
+                                   poe_id=prescription_id)
+
+                        medicine_counter += 1
+                    
+                    prescription_counter += 1
+                
+                logger.info(f"Processed {len(presc_for_event)} medicines in {len(prescription_groups)} prescriptions for event {event_id}")
 
         logger.info("All prescriptions processed successfully!")
 
