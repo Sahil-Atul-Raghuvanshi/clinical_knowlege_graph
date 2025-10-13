@@ -47,6 +47,65 @@ def create_labevent_nodes():
 
     try:
         with driver.session() as session:
+            # Delete any existing cross-connections before processing
+            logger.info("Checking for and deleting cross-connections...")
+            
+            # Delete HAS_PRESCRIPTIONS relationships from Lab nodes
+            query1 = """
+            MATCH (lab)-[r:HAS_PRESCRIPTIONS]->()
+            WHERE (lab:LabEvents OR lab:LabEventsBatch OR lab:Collection OR lab:Specimen OR lab:LabEvent)
+            DELETE r
+            RETURN count(r) as deleted_count
+            """
+            result1 = session.run(query1)
+            count1 = result1.single()["deleted_count"]
+            if count1 > 0:
+                logger.info(f"Deleted {count1} HAS_PRESCRIPTIONS from Lab nodes")
+            
+            # Delete HAS_PROCEDURES relationships from Lab nodes
+            query2 = """
+            MATCH (lab)-[r:HAS_PROCEDURES]->()
+            WHERE (lab:LabEvents OR lab:LabEventsBatch OR lab:Collection OR lab:Specimen OR lab:LabEvent)
+            DELETE r
+            RETURN count(r) as deleted_count
+            """
+            result2 = session.run(query2)
+            count2 = result2.single()["deleted_count"]
+            if count2 > 0:
+                logger.info(f"Deleted {count2} HAS_PROCEDURES from Lab nodes")
+            
+            # Delete ANY remaining relationships between LabEvents and Prescriptions
+            query3 = """
+            MATCH (lab)-[r]-(presc)
+            WHERE (lab:LabEvents OR lab:LabEventsBatch OR lab:Collection OR lab:Specimen OR lab:LabEvent)
+              AND (presc:Prescription OR presc:PrescriptionBatch OR presc:PrescriptionsBatch OR presc:Medicine)
+            DELETE r
+            RETURN count(r) as deleted_count
+            """
+            result3 = session.run(query3)
+            count3 = result3.single()["deleted_count"]
+            if count3 > 0:
+                logger.info(f"Deleted {count3} connections between LabEvents and Prescriptions")
+            
+            # Delete ANY remaining relationships between LabEvents and Procedures
+            query4 = """
+            MATCH (lab)-[r]-(proc)
+            WHERE (lab:LabEvents OR lab:LabEventsBatch OR lab:Collection OR lab:Specimen OR lab:LabEvent)
+              AND (proc:Procedure OR proc:ProceduresBatch)
+            DELETE r
+            RETURN count(r) as deleted_count
+            """
+            result4 = session.run(query4)
+            count4 = result4.single()["deleted_count"]
+            if count4 > 0:
+                logger.info(f"Deleted {count4} connections between LabEvents and Procedures")
+            
+            total_deleted = count1 + count2 + count3 + count4
+            if total_deleted > 0:
+                logger.info(f"Total cross-connections deleted: {total_deleted}")
+            else:
+                logger.info("No cross-connections found.")
+            
             # Fetch events with intime/outtime
             query_events = """
             MATCH (e)

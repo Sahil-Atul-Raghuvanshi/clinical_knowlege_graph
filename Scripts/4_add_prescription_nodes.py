@@ -42,8 +42,13 @@ def create_prescription_nodes():
         presc_df["stoptime"] = pd.to_datetime(presc_df["stoptime"], errors="coerce")
         
         # Remove duplicate prescriptions before processing
+        # Note: Only remove duplicates based on poe_id if it's not null
+        # For rows with null poe_id, we keep all of them as they represent unique medicines
         initial_count = len(presc_df)
-        presc_df = presc_df.drop_duplicates(subset=['poe_id'], keep='first')
+        # Keep rows with null poe_id, only deduplicate non-null poe_id rows
+        null_poe = presc_df[presc_df['poe_id'].isna()]
+        non_null_poe = presc_df[presc_df['poe_id'].notna()].drop_duplicates(subset=['poe_id'], keep='first')
+        presc_df = pd.concat([non_null_poe, null_poe]).sort_index()
         final_count = len(presc_df)
         logger.info(f"Removed {initial_count - final_count} duplicate prescriptions. {final_count} unique prescriptions remaining.")
         
@@ -51,6 +56,77 @@ def create_prescription_nodes():
         presc_df = presc_df.sort_values(by='starttime')
 
         with driver.session() as session:
+            # Delete any existing cross-connections before processing
+            logger.info("Checking for and deleting cross-connections...")
+            
+            # Delete HAS_LAB_EVENTS relationships from Prescription nodes
+            query1 = """
+            MATCH (p)-[r:HAS_LAB_EVENTS]->()
+            WHERE (p:PrescriptionBatch OR p:PrescriptionsBatch OR p:Prescription OR p:Medicine)
+            DELETE r
+            RETURN count(r) as deleted_count
+            """
+            result1 = session.run(query1)
+            count1 = result1.single()["deleted_count"]
+            if count1 > 0:
+                logger.info(f"Deleted {count1} HAS_LAB_EVENTS from Prescription nodes")
+            
+            # Delete HAS_PROCEDURES relationships from Prescription nodes
+            query2 = """
+            MATCH (p)-[r:HAS_PROCEDURES]->()
+            WHERE (p:PrescriptionBatch OR p:PrescriptionsBatch OR p:Prescription OR p:Medicine)
+            DELETE r
+            RETURN count(r) as deleted_count
+            """
+            result2 = session.run(query2)
+            count2 = result2.single()["deleted_count"]
+            if count2 > 0:
+                logger.info(f"Deleted {count2} HAS_PROCEDURES from Prescription nodes")
+            
+            # Delete ANY remaining relationships between Prescription and Procedure nodes
+            query3 = """
+            MATCH (p)-[r]-(proc)
+            WHERE (p:PrescriptionBatch OR p:PrescriptionsBatch OR p:Prescription OR p:Medicine)
+              AND (proc:Procedure OR proc:ProceduresBatch)
+            DELETE r
+            RETURN count(r) as deleted_count
+            """
+            result3 = session.run(query3)
+            count3 = result3.single()["deleted_count"]
+            if count3 > 0:
+                logger.info(f"Deleted {count3} connections between Prescription and Procedures")
+            
+            # Delete ANY remaining relationships between Prescription and LabEvents nodes
+            query4 = """
+            MATCH (p)-[r]-(lab)
+            WHERE (p:PrescriptionBatch OR p:PrescriptionsBatch OR p:Prescription OR p:Medicine)
+              AND (lab:LabEvents OR lab:LabEventsBatch OR lab:Collection OR lab:Specimen OR lab:LabEvent)
+            DELETE r
+            RETURN count(r) as deleted_count
+            """
+            result4 = session.run(query4)
+            count4 = result4.single()["deleted_count"]
+            if count4 > 0:
+                logger.info(f"Deleted {count4} connections between Prescription and LabEvents")
+            
+            # Delete incorrect HAS_PRESCRIPTIONS relationships from non-event nodes
+            query5 = """
+            MATCH (n)-[r:HAS_PRESCRIPTIONS]->(pb:PrescriptionsBatch)
+            WHERE NOT (n:UnitAdmission OR n:EmergencyDepartment OR n:Discharge)
+            DELETE r
+            RETURN count(r) as deleted_count
+            """
+            result5 = session.run(query5)
+            count5 = result5.single()["deleted_count"]
+            if count5 > 0:
+                logger.info(f"Deleted {count5} incorrect HAS_PRESCRIPTIONS relationships from non-event nodes")
+            
+            total_deleted = count1 + count2 + count3 + count4 + count5
+            if total_deleted > 0:
+                logger.info(f"Total cross-connections deleted: {total_deleted}")
+            else:
+                logger.info("No cross-connections found.")
+            
             # Fetch all event nodes with intime/outtime
             query_events = """
             MATCH (e)
@@ -87,7 +163,7 @@ def create_prescription_nodes():
                 # Create PrescriptionsBatch node (central node)
                 query_prescriptions_batch = """
                 MATCH (e {event_id: $event_id})
-                WHERE NOT e:PrescriptionBatch AND NOT e:PrescriptionsBatch AND NOT e:ProceduresBatch AND NOT e:LabEventsBatch AND NOT e:LabEvents
+                WHERE e:UnitAdmission OR e:EmergencyDepartment OR e:Discharge
                 MERGE (pb:PrescriptionsBatch {event_id: $event_id})
                 ON CREATE SET pb.name = "PrescriptionsBatch"
                 MERGE (e)-[:HAS_PRESCRIPTIONS]->(pb)
@@ -129,11 +205,7 @@ def create_prescription_nodes():
                     # Create individual Medicine nodes
                     medicine_counter = 1
                     
-                    for _, row in prescription_medicines.iterrows():
-                        prescription_id = str(row["poe_id"]).strip() if pd.notna(row["poe_id"]) else None
-                        if not prescription_id:
-                            continue
-
+                    for row_idx, row in prescription_medicines.iterrows():
                         raw_subject_id = str(row["subject_id"]).split("-")[0]
                         try:
                             subject_id = int(raw_subject_id)
@@ -142,13 +214,22 @@ def create_prescription_nodes():
                             continue
 
                         hadm_id = str(row["hadm_id"]).strip() if pd.notna(row["hadm_id"]) else None
+                        
+                        # Create unique medicine_id based on event_id, starttime, and counter
+                        # This ensures each row gets its own Medicine node
+                        medicine_id = f"{event_id}_{starttime.strftime('%Y%m%d%H%M%S')}_{medicine_counter}"
+                        
+                        # Extract poe_id and pharmacy_id as properties (not as unique identifiers)
+                        poe_id = str(row["poe_id"]).strip() if pd.notna(row["poe_id"]) else None
+                        pharmacy_id = str(row["pharmacy_id"]).strip() if pd.notna(row["pharmacy_id"]) else None
 
                         # Prepare all properties for Medicine node
                         medicine_props = {
-                            "poe_id": prescription_id,
+                            "medicine_id": medicine_id,
+                            "poe_id": poe_id,
+                            "pharmacy_id": pharmacy_id,
                             "subject_id": subject_id,
                             "hadm_id": hadm_id,
-                            "pharmacy_id": str(row.get("pharmacy_id")) if pd.notna(row.get("pharmacy_id")) else None,
                             "poe_seq": int(row.get("poe_seq")) if pd.notna(row.get("poe_seq")) else None,
                             "order_provider_id": str(row.get("order_provider_id")) if pd.notna(row.get("order_provider_id")) else None,
                             "starttime": row["starttime"].strftime("%Y-%m-%d %H:%M:%S") if pd.notna(row["starttime"]) else None,
@@ -171,8 +252,8 @@ def create_prescription_nodes():
 
                         # Create/update Medicine node
                         query_medicine = """
-                        MERGE (m:Medicine {poe_id: $poe_id})
-                        ON CREATE SET m.subject_id = $subject_id, m.hadm_id = $hadm_id,
+                        MERGE (m:Medicine {medicine_id: $medicine_id})
+                        ON CREATE SET m.poe_id = $poe_id, m.subject_id = $subject_id, m.hadm_id = $hadm_id,
                                       m.pharmacy_id = $pharmacy_id, m.poe_seq = $poe_seq,
                                       m.order_provider_id = $order_provider_id,
                                       m.starttime = $starttime, m.stoptime = $stoptime,
@@ -183,7 +264,7 @@ def create_prescription_nodes():
                                       m.dose_unit_rx = $dose_unit_rx, m.form_val_disp = $form_val_disp,
                                       m.form_unit_disp = $form_unit_disp, m.doses_per_24_hrs = $doses_per_24_hrs,
                                       m.route = $route, m.name = $name
-                        ON MATCH SET  m.subject_id = $subject_id, m.hadm_id = $hadm_id,
+                        ON MATCH SET  m.poe_id = $poe_id, m.subject_id = $subject_id, m.hadm_id = $hadm_id,
                                       m.pharmacy_id = $pharmacy_id, m.poe_seq = $poe_seq,
                                       m.order_provider_id = $order_provider_id,
                                       m.starttime = $starttime, m.stoptime = $stoptime,
@@ -200,12 +281,12 @@ def create_prescription_nodes():
                         # Link Medicine → Prescription
                         query_link_medicine = """
                         MATCH (p:Prescription {event_id: $event_id, starttime: $starttime})
-                        MATCH (m:Medicine {poe_id: $poe_id})
+                        MATCH (m:Medicine {medicine_id: $medicine_id})
                         MERGE (p)-[:HAS_MEDICINE]->(m)
                         """
                         session.run(query_link_medicine, event_id=event_id, 
                                    starttime=starttime.strftime('%Y-%m-%d %H:%M:%S'),
-                                   poe_id=prescription_id)
+                                   medicine_id=medicine_id)
 
                         medicine_counter += 1
                     
