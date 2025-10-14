@@ -177,7 +177,32 @@ with driver.session() as session:
     count14 = result14.single()["deleted_count"]
     logger.info(f"Deleted {count14} connections between LabEvents and MicrobiologyEvents")
     
-    total = count1 + count2 + count3 + count4 + count5 + count6 + count7 + count8 + count9 + count10 + count11 + count12 + count13 + count14
+    # Delete HAS_CHART_EVENTS from non-ICUStay nodes to ChartEventBatch
+    query15 = """
+    MATCH (n)-[r:HAS_CHART_EVENTS]->(ceb:ChartEventBatch)
+    WHERE NOT n:ICUStay
+    DELETE r
+    RETURN count(r) as deleted_count
+    """
+    result15 = session.run(query15)
+    count15 = result15.single()["deleted_count"]
+    logger.info(f"Deleted {count15} HAS_CHART_EVENTS from non-ICUStay nodes")
+    
+    # Delete ANY other relationships to/from ChartEventBatch except HAS_CHART_EVENTS from ICUStay and HAS_CHART_EVENT to ChartEvent
+    query16 = """
+    MATCH (n)-[r]-(ceb:ChartEventBatch)
+    WHERE NOT (
+        (n:ICUStay AND type(r) = 'HAS_CHART_EVENTS') OR
+        (n:ChartEvent AND type(r) = 'HAS_CHART_EVENT')
+    )
+    DELETE r
+    RETURN count(r) as deleted_count
+    """
+    result16 = session.run(query16)
+    count16 = result16.single()["deleted_count"]
+    logger.info(f"Deleted {count16} unwanted relationships to/from ChartEventBatch")
+    
+    total = count1 + count2 + count3 + count4 + count5 + count6 + count7 + count8 + count9 + count10 + count11 + count12 + count13 + count14 + count15 + count16
     logger.info(f"\nTotal cross-connections deleted: {total}")
 
 driver.close()

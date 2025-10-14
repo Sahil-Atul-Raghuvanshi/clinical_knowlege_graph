@@ -1,0 +1,4 @@
+subject_id,hadm_id,stay_id,first_careunit,last_careunit,intime,outtime,los
+10016742,27568122,30425410,Medical Intensive Care Unit (MICU),Medical Intensive Care Unit (MICU),2178-07-22 08:19:00,2178-07-25 16:42:43,3.3498032407407408
+10016742,28506150,32314488,Medical Intensive Care Unit (MICU),Medical Intensive Care Unit (MICU),2178-07-13 08:16:00,2178-07-16 14:41:31,3.2677199074074075
+10016742,29281842,37057036,Surgical Intensive Care Unit (SICU),Surgical Intensive Care Unit (SICU),2178-07-03 22:45:00,2178-07-08 20:34:44,4.909537037037037
