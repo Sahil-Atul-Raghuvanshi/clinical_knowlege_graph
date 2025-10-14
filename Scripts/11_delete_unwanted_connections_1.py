@@ -117,7 +117,67 @@ with driver.session() as session:
     count9 = result9.single()["deleted_count"]
     logger.info(f"Deleted {count9} connections between LabEvent and Prescription nodes")
     
-    total = count1 + count2 + count3 + count4 + count5 + count6 + count7 + count8 + count9
+    # Delete connections FROM Prescriptions TO MicrobiologyEvents
+    query10 = """
+    MATCH (presc)-[r:HAS_MICROBIOLOGY_EVENTS]->(micro)
+    WHERE (presc:Prescription OR presc:PrescriptionsBatch)
+      AND (micro:MicrobiologyEvents OR micro:MicrobiologyEvent)
+    DELETE r
+    RETURN count(r) as deleted_count
+    """
+    result10 = session.run(query10)
+    count10 = result10.single()["deleted_count"]
+    logger.info(f"Deleted {count10} HAS_MICROBIOLOGY_EVENTS from Prescriptions to MicrobiologyEvents")
+    
+    # Delete connections FROM Procedures TO MicrobiologyEvents
+    query11 = """
+    MATCH (proc)-[r:HAS_MICROBIOLOGY_EVENTS]->(micro)
+    WHERE (proc:Procedures OR proc:ProceduresBatch OR proc:Procedure)
+      AND (micro:MicrobiologyEvents OR micro:MicrobiologyEvent)
+    DELETE r
+    RETURN count(r) as deleted_count
+    """
+    result11 = session.run(query11)
+    count11 = result11.single()["deleted_count"]
+    logger.info(f"Deleted {count11} HAS_MICROBIOLOGY_EVENTS from Procedures to MicrobiologyEvents")
+    
+    # Delete ANY connections between Prescriptions and MicrobiologyEvents (bidirectional)
+    query12 = """
+    MATCH (presc)-[r]-(micro)
+    WHERE (presc:Prescription OR presc:PrescriptionsBatch)
+      AND (micro:MicrobiologyEvents OR micro:MicrobiologyEvent)
+    DELETE r
+    RETURN count(r) as deleted_count
+    """
+    result12 = session.run(query12)
+    count12 = result12.single()["deleted_count"]
+    logger.info(f"Deleted {count12} connections between Prescriptions and MicrobiologyEvents")
+    
+    # Delete ANY connections between Procedures and MicrobiologyEvents (bidirectional)
+    query13 = """
+    MATCH (proc)-[r]-(micro)
+    WHERE (proc:Procedures OR proc:ProceduresBatch OR proc:Procedure)
+      AND (micro:MicrobiologyEvents OR micro:MicrobiologyEvent)
+    DELETE r
+    RETURN count(r) as deleted_count
+    """
+    result13 = session.run(query13)
+    count13 = result13.single()["deleted_count"]
+    logger.info(f"Deleted {count13} connections between Procedures and MicrobiologyEvents")
+    
+    # Delete ANY connections between LabEvents and MicrobiologyEvents (bidirectional)
+    query14 = """
+    MATCH (lab)-[r]-(micro)
+    WHERE (lab:LabEvents OR lab:LabEvent)
+      AND (micro:MicrobiologyEvents OR micro:MicrobiologyEvent)
+    DELETE r
+    RETURN count(r) as deleted_count
+    """
+    result14 = session.run(query14)
+    count14 = result14.single()["deleted_count"]
+    logger.info(f"Deleted {count14} connections between LabEvents and MicrobiologyEvents")
+    
+    total = count1 + count2 + count3 + count4 + count5 + count6 + count7 + count8 + count9 + count10 + count11 + count12 + count13 + count14
     logger.info(f"\nTotal cross-connections deleted: {total}")
 
 driver.close()

@@ -68,6 +68,7 @@ def create_patient_flow():
     # File paths - dynamically constructed
     ADMISSIONS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\admissions.csv"
     TRANSFERS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\transfers.csv"
+    SERVICES_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\services.csv"
 
     driver = GraphDatabase.driver(URI, auth=AUTH, database=DATABASE)
 
@@ -80,6 +81,23 @@ def create_patient_flow():
         transfers_df = pd.read_csv(TRANSFERS_CSV)
         transfers_df["intime"] = pd.to_datetime(transfers_df["intime"], errors="coerce")
         transfers_df["outtime"] = pd.to_datetime(transfers_df["outtime"], errors="coerce")
+
+        # Load services data
+        services_df = pd.read_csv(SERVICES_CSV)
+        services_df["transfertime"] = pd.to_datetime(services_df["transfertime"], errors="coerce")
+        
+        # Merge services with transfers based on subject_id, hadm_id, and matching times
+        transfers_df = transfers_df.merge(
+            services_df[["subject_id", "hadm_id", "transfertime", "curr_service"]],
+            left_on=["subject_id", "hadm_id", "intime"],
+            right_on=["subject_id", "hadm_id", "transfertime"],
+            how="left"
+        )
+        # Rename curr_service to service_given
+        transfers_df.rename(columns={"curr_service": "service_given"}, inplace=True)
+        # Drop the extra transfertime column
+        if "transfertime" in transfers_df.columns:
+            transfers_df.drop(columns=["transfertime"], inplace=True)
 
         # Sort transfers
         transfers_df = transfers_df.sort_values(by=["subject_id", "hadm_id", "intime"]).reset_index(drop=True)
@@ -206,6 +224,7 @@ def create_patient_flow():
                         careunit = row["careunit"] if pd.notna(row["careunit"]) else "Unknown"
                         intime = row["intime"]
                         outtime = row["outtime"]
+                        service_given = row["service_given"] if pd.notna(row.get("service_given")) else None
 
                         intime_str = intime.strftime("%Y-%m-%d %H:%M:%S") if pd.notna(intime) else None
                         outtime_str = outtime.strftime("%Y-%m-%d %H:%M:%S") if pd.notna(outtime) else None
@@ -231,7 +250,8 @@ def create_patient_flow():
                             e.careunit = $careunit,
                             e.intime = $intime,
                             e.outtime = $outtime,
-                            e.period = $period
+                            e.period = $period,
+                            e.service_given = $service_given
                         ON MATCH SET
                             e.name = $name_value,
                             e.subject_id = $subject_id,
@@ -241,7 +261,8 @@ def create_patient_flow():
                             e.careunit = $careunit,
                             e.intime = $intime,
                             e.outtime = $outtime,
-                            e.period = $period
+                            e.period = $period,
+                            e.service_given = $service_given
                         """
                         session.run(query_node,
                                     event_id=event_id,
@@ -253,7 +274,8 @@ def create_patient_flow():
                                     careunit=careunit,
                                     intime=intime_str,
                                     outtime=outtime_str,
-                                    period=period)
+                                    period=period,
+                                    service_given=service_given)
 
                         if first_event_id is None:
                             first_event_id = event_id
