@@ -21,6 +21,96 @@ def get_folder_name():
         logger.error(f"Error reading folder name: {e}")
         raise
 
+def create_previous_prescription_meds(driver, folder_name):
+    """Create PreviousPrescriptionMeds nodes from medrecon data"""
+    MEDRECON_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\medrecon.csv"
+    
+    try:
+        # Load medrecon data
+        medrecon_df = pd.read_csv(MEDRECON_CSV)
+        medrecon_df["charttime"] = pd.to_datetime(medrecon_df["charttime"], errors="coerce")
+        
+        # Group by stay_id only to create one node per ED visit
+        grouped = medrecon_df.groupby('stay_id')
+        
+        with driver.session() as session:
+            for stay_id, group in grouped:
+                # Format medications as "[Medication Name] - [ETC Description]"
+                med_descriptions = []
+                for _, row in group.iterrows():
+                    med_name = row['name']
+                    etc_desc = row['etcdescription'] if pd.notna(row['etcdescription']) else "No Classification"
+                    med_descriptions.append(f"{med_name} - {etc_desc}")
+                
+                # Get the first charttime for reference
+                first_charttime = group['charttime'].iloc[0]
+                
+                # Create PreviousPrescriptionMeds node and link to EmergencyDepartment
+                query = """
+                MATCH (ed:EmergencyDepartment {event_id: $stay_id})
+                MERGE (prev:PreviousPrescriptionMeds {stay_id: $stay_id})
+                SET prev.medications = $medications,
+                    prev.medication_count = $count,
+                    prev.charttime = $charttime
+                MERGE (ed)-[:HAS_PREVIOUS_MEDS]->(prev)
+                """
+                session.run(query,
+                          stay_id=str(stay_id),
+                          charttime=first_charttime.strftime('%Y-%m-%d %H:%M:%S'),
+                          medications=med_descriptions,
+                          count=len(med_descriptions))
+                
+                logger.info(f"Processed {len(med_descriptions)} previous medications for ED stay {stay_id}")
+                
+    except Exception as e:
+        logger.error(f"Error processing previous prescription meds: {e}")
+        raise
+
+def create_administered_meds(driver, folder_name):
+    """Create AdministeredMeds nodes from pyxis data"""
+    PYXIS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\pyxis.csv"
+    
+    try:
+        # Load pyxis data
+        pyxis_df = pd.read_csv(PYXIS_CSV)
+        pyxis_df["charttime"] = pd.to_datetime(pyxis_df["charttime"], errors="coerce")
+        
+        # Group by stay_id only to create one node per ED visit
+        grouped = pyxis_df.groupby('stay_id')
+        
+        with driver.session() as session:
+            for stay_id, group in grouped:
+                # Aggregate medication names into array of strings
+                med_names = []
+                for _, row in group.iterrows():
+                    med_name = row['name']
+                    if pd.notna(med_name):
+                        med_names.append(str(med_name))
+                
+                # Get the first charttime for reference
+                first_charttime = group['charttime'].iloc[0]
+                
+                # Create AdministeredMeds node and link to EmergencyDepartment
+                query = """
+                MATCH (ed:EmergencyDepartment {event_id: $stay_id})
+                MERGE (admin:AdministeredMeds {stay_id: $stay_id})
+                SET admin.medications = $medications,
+                    admin.medication_count = $count,
+                    admin.charttime = $charttime
+                MERGE (ed)-[:HAS_ADMINISTERED_MEDS]->(admin)
+                """
+                session.run(query,
+                          stay_id=str(stay_id),
+                          charttime=first_charttime.strftime('%Y-%m-%d %H:%M:%S'),
+                          medications=med_names,
+                          count=len(med_names))
+                
+                logger.info(f"Processed {len(med_names)} administered medications for ED stay {stay_id}")
+                
+    except Exception as e:
+        logger.error(f"Error processing administered meds: {e}")
+        raise
+
 def create_prescription_nodes():
     # Get dynamic folder name
     folder_name = get_folder_name()
@@ -30,8 +120,9 @@ def create_prescription_nodes():
     AUTH = ("neo4j", "admin123")
     DATABASE = "10016742"
 
-    # File path - dynamically constructed
+    # File paths - dynamically constructed
     PRESCRIPTIONS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\prescriptions.csv"
+    MEDRECON_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\medrecon.csv"
 
     driver = GraphDatabase.driver(URI, auth=AUTH, database=DATABASE)
 
@@ -231,6 +322,14 @@ def create_prescription_nodes():
                 logger.info(f"Processed {len(presc_for_event)} medicines in {len(prescription_groups)} prescriptions for event {event_id}")
 
         logger.info("All prescriptions processed successfully!")
+
+        # Process previous prescription meds
+        create_previous_prescription_meds(driver, folder_name)
+        logger.info("Previous prescription meds processed successfully!")
+
+        # Process administered meds
+        create_administered_meds(driver, folder_name)
+        logger.info("Administered meds processed successfully!")
 
     except Exception as e:
         logger.error(f"An error occurred: {e}")

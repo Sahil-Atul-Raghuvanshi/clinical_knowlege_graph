@@ -1,0 +1,6 @@
+subject_id,stay_id,seq_num,icd_code,icd_version,icd_title
+10016742,33065303,1,I214,10,Non-ST elevation (NSTEMI) myocardial infarction
+10016742,33211001,1,Z452,10,Encounter for adjustment and management of VAD
+10016742,33211001,2,G1221,10,Amyotrophic lateral sclerosis
+10016742,33335871,1,J189,10,"Pneumonia, unspecified organism"
+10016742,36180820,1,J189,10,"Pneumonia, unspecified organism"

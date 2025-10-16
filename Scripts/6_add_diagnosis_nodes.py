@@ -20,6 +20,53 @@ def get_folder_name():
         logger.error(f"Error reading folder name: {e}")
         raise
 
+def create_ed_diagnosis_nodes(driver, folder_name):
+    """Create diagnosis nodes for Emergency Department visits"""
+    logger.info("Processing ED diagnoses...")
+    
+    # File path for ED diagnosis
+    ED_DIAGNOSIS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\ed_diagnosis.csv"
+    
+    try:
+        # Load ED diagnosis data
+        ed_diag_df = pd.read_csv(ED_DIAGNOSIS_CSV)
+        
+        # Group diagnoses by stay_id
+        grouped_diagnoses = ed_diag_df.groupby('stay_id').agg({
+            'icd_title': lambda x: list(x),
+            'subject_id': 'first'  # Take the first subject_id for each stay
+        }).reset_index()
+        
+        with driver.session() as session:
+            for _, row in grouped_diagnoses.iterrows():
+                stay_id = str(row['stay_id'])
+                subject_id = str(row['subject_id'])
+                diagnosis_titles = row['icd_title']  # Already a list from groupby
+                
+                # Create Diagnosis node and link it to EmergencyDepartment
+                query_ed_diagnosis = """
+                MATCH (ed:EmergencyDepartment {event_id:$stay_id})
+                MERGE (diag:Diagnosis {
+                    event_id:$stay_id,
+                    subject_id:$subject_id,
+                    ed_diagnosis:true
+                })
+                SET diag.titles = $titles,
+                    diag.diagnosis_count = $count
+                MERGE (ed)-[:HAS_DIAGNOSES]->(diag)
+                """
+                session.run(query_ed_diagnosis,
+                          stay_id=stay_id,
+                          subject_id=subject_id,
+                          titles=diagnosis_titles,
+                          count=len(diagnosis_titles))
+                
+                logger.info(f"Added {len(diagnosis_titles)} ED diagnoses for stay_id {stay_id}")
+                
+    except Exception as e:
+        logger.error(f"Error processing ED diagnoses: {e}")
+        raise
+
 def create_diagnosis_nodes():
     # Get dynamic folder name
     folder_name = get_folder_name()
@@ -100,6 +147,13 @@ def create_diagnosis_nodes():
 
         logger.info("All diagnoses processed successfully!")
 
+    finally:
+        # Don't close the driver here as we need it for ED diagnoses
+        pass
+
+    try:
+        # Process ED diagnoses
+        create_ed_diagnosis_nodes(driver, folder_name)
     finally:
         driver.close()
 

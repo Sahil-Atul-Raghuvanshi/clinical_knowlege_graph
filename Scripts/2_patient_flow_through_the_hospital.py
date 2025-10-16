@@ -56,6 +56,65 @@ def calculate_gap(prev_time, next_time):
         return f"{days} days {hours} hours {minutes} minutes"
     return None
 
+def process_ed_stays(session, edstays_df, transfers_df, subject_id):
+    """Process ED stays for a patient, including those without hospital admissions"""
+    # Filter ED stays for this patient
+    patient_edstays = edstays_df[edstays_df["subject_id"] == subject_id].copy()
+    patient_edstays = patient_edstays.sort_values(by="intime").reset_index(drop=True)
+    
+    for _, stay in patient_edstays.iterrows():
+        stay_id = str(stay["stay_id"])
+        hadm_id = stay["hadm_id"] if pd.notna(stay["hadm_id"]) else None
+        intime = stay["intime"]
+        outtime = stay["outtime"]
+        
+        # Format times
+        intime_str = intime.strftime("%Y-%m-%d %H:%M:%S") if pd.notna(intime) else None
+        outtime_str = outtime.strftime("%Y-%m-%d %H:%M:%S") if pd.notna(outtime) else None
+        period = human_readable_period(intime, outtime)
+        
+        # Create ED node
+        query_ed = """
+        MERGE (ed:EmergencyDepartment {event_id: $stay_id})
+        ON CREATE SET 
+            ed.name = 'Emergency Department',
+            ed.subject_id = $subject_id,
+            ed.hadm_id = $hadm_id,
+            ed.intime = $intime,
+            ed.outtime = $outtime,
+            ed.period = $period,
+            ed.disposition = $disposition,
+            ed.arrival_transport = $arrival_transport
+        ON MATCH SET
+            ed.name = 'Emergency Department',
+            ed.subject_id = $subject_id,
+            ed.hadm_id = $hadm_id,
+            ed.intime = $intime,
+            ed.outtime = $outtime,
+            ed.period = $period,
+            ed.disposition = $disposition,
+            ed.arrival_transport = $arrival_transport
+        """
+        session.run(query_ed,
+                   stay_id=stay_id,
+                   subject_id=int(subject_id),
+                   hadm_id=hadm_id,
+                   intime=intime_str,
+                   outtime=outtime_str,
+                   period=period,
+                   disposition=stay["disposition"] if pd.notna(stay["disposition"]) else None,
+                   arrival_transport=stay["arrival_transport"] if pd.notna(stay["arrival_transport"]) else None)
+        
+        # Only create HAS_ED_VISIT for standalone ED visits (no hospital admission)
+        if pd.isna(hadm_id):
+            query_patient = """
+            MATCH (p:Patient {subject_id: $subject_id})
+            MATCH (ed:EmergencyDepartment {event_id: $stay_id})
+            MERGE (p)-[:HAS_ED_VISIT]->(ed)
+            """
+            session.run(query_patient, subject_id=int(subject_id), stay_id=stay_id)
+            logger.info(f"Processed standalone ED visit {stay_id} for subject {subject_id}")
+
 def create_patient_flow():
     # Get dynamic folder name
     folder_name = get_folder_name()
@@ -69,6 +128,7 @@ def create_patient_flow():
     ADMISSIONS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\admissions.csv"
     TRANSFERS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\transfers.csv"
     SERVICES_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\services.csv"
+    EDSTAYS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\edstays.csv"
 
     driver = GraphDatabase.driver(URI, auth=AUTH, database=DATABASE)
 
@@ -85,6 +145,11 @@ def create_patient_flow():
         # Load services data
         services_df = pd.read_csv(SERVICES_CSV)
         services_df["transfertime"] = pd.to_datetime(services_df["transfertime"], errors="coerce")
+
+        # Load ED stays data
+        edstays_df = pd.read_csv(EDSTAYS_CSV)
+        edstays_df["intime"] = pd.to_datetime(edstays_df["intime"], errors="coerce")
+        edstays_df["outtime"] = pd.to_datetime(edstays_df["outtime"], errors="coerce")
         
         # Merge services with transfers based on subject_id, hadm_id, and matching times
         transfers_df = transfers_df.merge(
@@ -103,7 +168,21 @@ def create_patient_flow():
         transfers_df = transfers_df.sort_values(by=["subject_id", "hadm_id", "intime"]).reset_index(drop=True)
 
         with driver.session() as session:
-            for subject_id, patient_admissions in admissions_df.groupby("subject_id"):
+            # Get unique subject_ids from both admissions and ED stays
+            all_subjects = pd.concat([
+                admissions_df["subject_id"],
+                edstays_df["subject_id"]
+            ]).unique()
+
+            for subject_id in all_subjects:
+                # Process ED stays first (both standalone and admission-linked)
+                process_ed_stays(session, edstays_df, transfers_df, subject_id)
+
+                # Process hospital admissions if they exist
+                patient_admissions = admissions_df[admissions_df["subject_id"] == subject_id]
+                if patient_admissions.empty:
+                    continue
+
                 # Sort admissions chronologically
                 patient_admissions_sorted = patient_admissions.sort_values(by="admittime").reset_index(drop=True)
                 total_admissions = len(patient_admissions_sorted)
