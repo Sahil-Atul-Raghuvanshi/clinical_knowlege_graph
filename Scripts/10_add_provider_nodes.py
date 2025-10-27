@@ -67,7 +67,11 @@ def add_provider_nodes():
                     # Create provider node and relationship in single query
                     query = """
                     MERGE (p:Provider {provider_id: $provider_id})
-                    ON CREATE SET p.created_at = datetime()
+                    ON CREATE SET 
+                        p.name = 'Provider',
+                        p.created_at = datetime()
+                    ON MATCH SET
+                        p.name = 'Provider'
                     WITH p
                     MATCH (h:HospitalAdmission {hadm_id: $hadm_id})
                     MERGE (p)-[:ADMITS_PATIENT]->(h)

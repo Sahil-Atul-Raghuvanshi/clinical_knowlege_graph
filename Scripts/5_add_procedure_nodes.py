@@ -317,7 +317,7 @@ def create_procedure_nodes():
                             "time": proc_group['time_str'],
                             "procedures": proc_group['procedures'],
                             "procedure_count": len(proc_group['procedures']),
-                            "name": f"Procedures_{proc_counter}",
+                            "name": "Procedures",
                             "source": proc_group['source']
                         }
                         

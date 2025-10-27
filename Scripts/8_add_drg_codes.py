@@ -60,13 +60,14 @@ def add_drg_codes():
                 query_drg = """
                 MERGE (drg:DRG {drg_id: $drg_id})
                 ON CREATE SET 
-                    drg.name = $description,
+                    drg.name = 'DRG',
                     drg.drg_type = $drg_type,
                     drg.drg_code = $drg_code,
                     drg.description = $description,
                     drg.drg_severity = $drg_severity,
                     drg.drg_mortality = $drg_mortality
                 ON MATCH SET
+                    drg.name = 'DRG',
                     drg.description = $description,
                     drg.drg_severity = $drg_severity,
                     drg.drg_mortality = $drg_mortality

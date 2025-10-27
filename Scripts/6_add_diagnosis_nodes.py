@@ -7,6 +7,17 @@ import os
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+def parse_diagnoses(diagnosis_string):
+    """Parse comma-separated diagnoses and return a list of clean diagnosis names"""
+    if pd.isna(diagnosis_string) or not diagnosis_string:
+        return []
+    
+    # Split by comma and clean up each diagnosis
+    diagnoses = [d.strip() for d in str(diagnosis_string).split(',')]
+    # Filter out empty strings
+    diagnoses = [d for d in diagnoses if d]
+    return diagnoses
+
 def get_folder_name():
     """Read folder name from foldername.txt"""
     try:
@@ -51,7 +62,8 @@ def create_ed_diagnosis_nodes(driver, folder_name):
                     subject_id:$subject_id,
                     ed_diagnosis:true
                 })
-                SET diag.titles = $titles,
+                SET diag.name = 'Diagnosis',
+                    diag.complete_diagnosis = $titles,
                     diag.diagnosis_count = $count
                 MERGE (ed)-[:HAS_DIAGNOSES]->(diag)
                 """
@@ -65,6 +77,82 @@ def create_ed_diagnosis_nodes(driver, folder_name):
                 
     except Exception as e:
         logger.error(f"Error processing ED diagnoses: {e}")
+        raise
+
+def add_primary_secondary_diagnoses(driver, folder_name):
+    """Add primary and secondary diagnoses as arrays to Diagnosis nodes from clinical notes"""
+    logger.info("Processing primary and secondary diagnoses from clinical notes...")
+    
+    # File path
+    CLINICAL_NOTES_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\discharge_clinical_note_flattened.csv"
+    
+    try:
+        # Check if file exists
+        if not os.path.exists(CLINICAL_NOTES_CSV):
+            logger.warning(f"Clinical notes file not found: {CLINICAL_NOTES_CSV}")
+            logger.warning("Skipping primary and secondary diagnoses processing")
+            return
+        
+        # Load clinical notes data
+        clinical_notes_df = pd.read_csv(CLINICAL_NOTES_CSV)
+        
+        # Filter to records with hadm_id
+        clinical_notes_df = clinical_notes_df[clinical_notes_df['hadm_id'].notna()]
+        
+        logger.info(f"Found {len(clinical_notes_df)} clinical note records with hadm_id")
+        
+        with driver.session() as session:
+            updated_count = 0
+            skipped_count = 0
+            total_primary = 0
+            total_secondary = 0
+            
+            for _, row in clinical_notes_df.iterrows():
+                hadm_id = int(row['hadm_id'])
+                
+                # Parse primary and secondary diagnoses
+                primary_diagnoses = parse_diagnoses(row.get('primary_diagnoses'))
+                secondary_diagnoses = parse_diagnoses(row.get('secondary_diagnoses'))
+                
+                # Skip if both are empty
+                if not primary_diagnoses and not secondary_diagnoses:
+                    skipped_count += 1
+                    continue
+                
+                # Update Diagnosis node with primary and secondary diagnoses arrays
+                update_query = """
+                MATCH (d:Discharge {hadm_id: $hadm_id})-[:HAS_DIAGNOSES]->(diag:Diagnosis)
+                SET diag.primary_diagnoses = $primary_diagnoses,
+                    diag.secondary_diagnoses = $secondary_diagnoses,
+                    diag.primary_count = $primary_count,
+                    diag.secondary_count = $secondary_count
+                RETURN diag
+                """
+                
+                result = session.run(update_query,
+                                   hadm_id=hadm_id,
+                                   primary_diagnoses=primary_diagnoses,
+                                   secondary_diagnoses=secondary_diagnoses,
+                                   primary_count=len(primary_diagnoses),
+                                   secondary_count=len(secondary_diagnoses))
+                
+                if result.single():
+                    updated_count += 1
+                    total_primary += len(primary_diagnoses)
+                    total_secondary += len(secondary_diagnoses)
+                    logger.info(f"Updated Diagnosis for hadm_id {hadm_id}: {len(primary_diagnoses)} primary, {len(secondary_diagnoses)} secondary")
+                else:
+                    logger.warning(f"No Diagnosis node found for hadm_id {hadm_id}")
+                    skipped_count += 1
+            
+            logger.info(f"Primary/Secondary Diagnoses Summary:")
+            logger.info(f"  Diagnosis nodes updated: {updated_count}")
+            logger.info(f"  Total primary diagnoses: {total_primary}")
+            logger.info(f"  Total secondary diagnoses: {total_secondary}")
+            logger.info(f"  Skipped: {skipped_count}")
+                
+    except Exception as e:
+        logger.error(f"Error processing primary/secondary diagnoses: {e}")
         raise
 
 def create_diagnosis_nodes():
@@ -136,7 +224,8 @@ def create_diagnosis_nodes():
                 query_diagnosis = """
                 MATCH (d:Discharge {event_id:$event_id})
                 MERGE (diag:Diagnosis {event_id:$event_id, hadm_id:$hadm_id, subject_id:$subject_id})
-                SET diag.titles = $titles,
+                SET diag.name = 'Diagnosis',
+                    diag.complete_diagnosis = $titles,
                     diag.diagnosis_count = $count
                 MERGE (d)-[:HAS_DIAGNOSES]->(diag)
                 """
@@ -154,6 +243,9 @@ def create_diagnosis_nodes():
     try:
         # Process ED diagnoses
         create_ed_diagnosis_nodes(driver, folder_name)
+        
+        # Process primary and secondary diagnoses from clinical notes
+        add_primary_secondary_diagnoses(driver, folder_name)
     finally:
         driver.close()
 

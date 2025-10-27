@@ -211,7 +211,7 @@ def create_labevent_nodes():
                         "charttime": charttime.strftime('%Y-%m-%d %H:%M:%S'),
                         "lab_results": lab_results,
                         "lab_count": len(lab_results),
-                        "name": f"LabEvent_{labevent_counter}"
+                        "name": "LabEvent"
                     }
                     
                     query_labevent = """

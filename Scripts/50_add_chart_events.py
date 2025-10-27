@@ -195,7 +195,7 @@ def create_chart_event_nodes():
                         "charttime": charttime.strftime('%Y-%m-%d %H:%M:%S'),
                         "chart_measurements": chart_measurements,
                         "measurement_count": len(chart_measurements),
-                        "name": f"ChartEvent_{chartevent_counter}"
+                        "name": "ChartEvent"
                     }
                     
                     query_chartevent = """

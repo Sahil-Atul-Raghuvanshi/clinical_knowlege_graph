@@ -51,11 +51,14 @@ def add_patient_nodes():
                 query = """
                 MERGE (p:Patient {subject_id: $subject_id})
                 ON CREATE SET 
+                    p.name = 'Patient',
                     p.gender = $gender,
                     p.anchor_age = $anchor_age,
                     p.anchor_year = $anchor_year,
                     p.anchor_year_group = $anchor_year_group,
                     p.dod = $dod
+                ON MATCH SET
+                    p.name = 'Patient'
                 """
                 
                 # Handle null values

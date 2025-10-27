@@ -1,0 +1,238 @@
+2025-10-27 12:58:17,141 - INFO - ================================================================================
+2025-10-27 12:58:17,141 - INFO - STARTING FULL KNOWLEDGE GRAPH LOAD
+2025-10-27 12:58:17,141 - INFO - ================================================================================
+2025-10-27 12:58:17,141 - INFO - 
+2025-10-27 12:58:17,142 - INFO - Loading script modules...
+2025-10-27 12:58:17,636 - INFO - All script modules loaded successfully!
+2025-10-27 12:58:17,636 - INFO - ================================================================================
+2025-10-27 12:58:17,637 - INFO - STEP 1/15: Running 1_add_patient_nodes.py
+2025-10-27 12:58:17,637 - INFO - ================================================================================
+2025-10-27 12:58:17,637 - INFO - Using folder name: HeartPatient
+2025-10-27 12:58:17,645 - INFO - Connection successful!
+2025-10-27 12:58:17,653 - INFO - Found 1 patient records
+2025-10-27 12:58:17,674 - INFO - Created patient node for subject_id: 10016742
+2025-10-27 12:58:17,677 - INFO - Patient nodes created successfully!
+2025-10-27 12:58:17,682 - INFO - 
+2025-10-27 12:58:17,682 - INFO - ================================================================================
+2025-10-27 12:58:17,682 - INFO - STEP 2/15: Running 2_patient_flow_through_the_hospital.py
+2025-10-27 12:58:17,682 - INFO - ================================================================================
+2025-10-27 12:58:17,683 - INFO - Using folder name: HeartPatient
+2025-10-27 12:58:17,770 - INFO - Processed standalone ED visit 33211001 for subject 10016742
+2025-10-27 12:58:17,821 - INFO - Processed hospital admission 29281842 (Seq 1) for subject 10016742
+2025-10-27 12:58:17,857 - INFO - Processed hospital admission 28506150 (Seq 2) for subject 10016742
+2025-10-27 12:58:17,890 - INFO - Processed hospital admission 27568122 (Seq 3) for subject 10016742
+2025-10-27 12:58:17,892 - INFO - Patient flows with hospital admits, inter-admission links, sequence numbers, and total counts created successfully!
+2025-10-27 12:58:17,895 - INFO - 
+2025-10-27 12:58:17,895 - INFO - ================================================================================
+2025-10-27 12:58:17,895 - INFO - STEP 3/15: Running 3_add_icu_stays_label.py
+2025-10-27 12:58:17,895 - INFO - ================================================================================
+2025-10-27 12:58:17,896 - INFO - Using folder name: HeartPatient
+2025-10-27 12:58:17,897 - INFO - Loaded 3 ICU stay records
+2025-10-27 12:58:17,931 - INFO - Added ICUStay label to Medical Intensive Care Unit (MICU) (stay_id: 30425410, LOS: 3.35 days)
+2025-10-27 12:58:17,936 - INFO - Added ICUStay label to Medical Intensive Care Unit (MICU) (stay_id: 32314488, LOS: 3.27 days)
+2025-10-27 12:58:17,942 - INFO - Added ICUStay label to Surgical Intensive Care Unit (SICU) (stay_id: 37057036, LOS: 4.91 days)
+2025-10-27 12:58:17,943 - INFO - Successfully added ICUStay label to 3 UnitAdmission nodes!
+2025-10-27 12:58:17,943 - INFO - These nodes now have dual labels: :UnitAdmission:ICUStay
+2025-10-27 12:58:17,945 - INFO - 
+2025-10-27 12:58:17,945 - INFO - ================================================================================
+2025-10-27 12:58:17,945 - INFO - STEP 4/15: Running 4_add_prescription_nodes.py
+2025-10-27 12:58:17,946 - INFO - ================================================================================
+2025-10-27 12:58:17,946 - INFO - Using folder name: HeartPatient
+2025-10-27 12:58:17,952 - INFO - Removed 20 duplicate prescriptions. 88 unique prescriptions remaining.
+2025-10-27 12:58:17,952 - INFO - Checking for and deleting cross-connections...
+2025-10-27 12:58:17,965 - INFO - No cross-connections found.
+2025-10-27 12:58:17,972 - INFO - Found 7 events with intime/outtime
+2025-10-27 12:58:18,039 - INFO - Processed 50 medicines in 9 prescriptions for event 32314488
+2025-10-27 12:58:18,126 - INFO - Processed 37 medicines in 12 prescriptions for event 30425410
+2025-10-27 12:58:18,128 - INFO - All prescriptions processed successfully!
+2025-10-27 12:58:18,133 - INFO - Processed 16 previous medications for ED stay 33211001
+2025-10-27 12:58:18,137 - INFO - Processed 14 previous medications for ED stay 33335871
+2025-10-27 12:58:18,140 - INFO - Previous prescription meds processed successfully!
+2025-10-27 12:58:18,147 - INFO - Processed 11 administered medications for ED stay 33065303
+2025-10-27 12:58:18,151 - INFO - Processed 3 administered medications for ED stay 33211001
+2025-10-27 12:58:18,155 - INFO - Processed 1 administered medications for ED stay 33335871
+2025-10-27 12:58:18,160 - INFO - Processed 4 administered medications for ED stay 36180820
+2025-10-27 12:58:18,162 - INFO - Administered meds processed successfully!
+2025-10-27 12:58:18,164 - INFO - 
+2025-10-27 12:58:18,165 - INFO - ================================================================================
+2025-10-27 12:58:18,165 - INFO - STEP 5/15: Running 5_add_procedure_nodes.py
+2025-10-27 12:58:18,165 - INFO - ================================================================================
+2025-10-27 12:58:18,165 - INFO - Using folder name: HeartPatient
+2025-10-27 12:58:18,291 - INFO - Loaded 9 ICD procedure records
+2025-10-27 12:58:18,305 - INFO - Loaded 17 ICU procedure event records
+2025-10-27 12:58:18,305 - INFO - Checking for and deleting cross-connections...
+2025-10-27 12:58:18,312 - INFO - No cross-connections found.
+2025-10-27 12:58:18,315 - INFO - Processing 3 ICU stays and 3 hospital admissions
+2025-10-27 12:58:18,317 - INFO - Filtered out 7 ContinuousProcess items for ICU stay 37057036, keeping 3 Task procedures
+2025-10-27 12:58:18,359 - INFO - Added 4 procedure groups for ICUStay 37057036
+2025-10-27 12:58:18,362 - INFO - Filtered out 2 ContinuousProcess items for ICU stay 32314488, keeping 1 Task procedures
+2025-10-27 12:58:18,386 - INFO - Added 2 procedure groups for ICUStay 32314488
+2025-10-27 12:58:18,388 - INFO - Filtered out 3 ContinuousProcess items for ICU stay 30425410, keeping 1 Task procedures
+2025-10-27 12:58:18,430 - INFO - Added 4 procedure groups for ICUStay 30425410
+2025-10-27 12:58:18,441 - INFO - Added 1 procedure groups for HospitalAdmission 29281842
+2025-10-27 12:58:18,452 - INFO - Added 1 procedure groups for HospitalAdmission 28506150
+2025-10-27 12:58:18,477 - INFO - Added 3 procedure groups for HospitalAdmission 27568122
+2025-10-27 12:58:18,477 - INFO - All procedures processed successfully!
+2025-10-27 12:58:18,484 - INFO - 
+2025-10-27 12:58:18,484 - INFO - ================================================================================
+2025-10-27 12:58:18,484 - INFO - STEP 6/15: Running 6_add_diagnosis_nodes.py
+2025-10-27 12:58:18,484 - INFO - ================================================================================
+2025-10-27 12:58:18,485 - INFO - Using folder name: HeartPatient
+2025-10-27 12:58:18,678 - INFO - Added 25 diagnoses for discharge event 37728841 (admission 29281842)
+2025-10-27 12:58:18,683 - INFO - Added 18 diagnoses for discharge event 34479130 (admission 28506150)
+2025-10-27 12:58:18,687 - INFO - Added 11 diagnoses for discharge event 32703325 (admission 27568122)
+2025-10-27 12:58:18,690 - INFO - All diagnoses processed successfully!
+2025-10-27 12:58:18,691 - INFO - Processing ED diagnoses...
+2025-10-27 12:58:18,697 - INFO - Added 1 ED diagnoses for stay_id 33065303
+2025-10-27 12:58:18,701 - INFO - Added 2 ED diagnoses for stay_id 33211001
+2025-10-27 12:58:18,706 - INFO - Added 1 ED diagnoses for stay_id 33335871
+2025-10-27 12:58:18,712 - INFO - Added 1 ED diagnoses for stay_id 36180820
+2025-10-27 12:58:18,714 - INFO - Processing primary and secondary diagnoses from clinical notes...
+2025-10-27 12:58:18,717 - INFO - Found 3 clinical note records with hadm_id
+2025-10-27 12:58:18,722 - INFO - Updated Diagnosis for hadm_id 29281842: 4 primary, 2 secondary
+2025-10-27 12:58:18,729 - INFO - Updated Diagnosis for hadm_id 28506150: 2 primary, 3 secondary
+2025-10-27 12:58:18,734 - INFO - Updated Diagnosis for hadm_id 27568122: 2 primary, 5 secondary
+2025-10-27 12:58:18,734 - INFO - Primary/Secondary Diagnoses Summary:
+2025-10-27 12:58:18,734 - INFO -   Diagnosis nodes updated: 3
+2025-10-27 12:58:18,734 - INFO -   Total primary diagnoses: 8
+2025-10-27 12:58:18,735 - INFO -   Total secondary diagnoses: 10
+2025-10-27 12:58:18,735 - INFO -   Skipped: 0
+2025-10-27 12:58:18,741 - INFO - 
+2025-10-27 12:58:18,742 - INFO - ================================================================================
+2025-10-27 12:58:18,742 - INFO - STEP 7/15: Running 7_add_labevent_nodes.py
+2025-10-27 12:58:18,742 - INFO - ================================================================================
+2025-10-27 12:58:18,743 - INFO - Using folder name: HeartPatient
+2025-10-27 12:58:18,750 - INFO - Checking for and deleting cross-connections...
+2025-10-27 12:58:18,845 - INFO - No cross-connections found.
+2025-10-27 12:58:18,853 - WARNING - Skipping event with missing IDs: event_id=33211001, subject_id=10016742, hadm_id=None
+2025-10-27 12:58:18,975 - INFO - Added 273 lab events for event 37057036
+2025-10-27 12:58:19,017 - INFO - Added 113 lab events for event 32314488
+2025-10-27 12:58:19,069 - INFO - Added 102 lab events for event 30425410
+2025-10-27 12:58:19,070 - INFO - All lab events processed successfully!
+2025-10-27 12:58:19,072 - INFO - 
+2025-10-27 12:58:19,073 - INFO - ================================================================================
+2025-10-27 12:58:19,073 - INFO - STEP 8/15: Running 8_add_drg_codes.py
+2025-10-27 12:58:19,073 - INFO - ================================================================================
+2025-10-27 12:58:19,073 - INFO - Using folder name: HeartPatient
+2025-10-27 12:58:19,074 - INFO - Loaded 6 DRG code records
+2025-10-27 12:58:19,105 - INFO - Processed DRG APR_133 (APR) for admission 27568122 - RESPIRATORY FAILURE...
+2025-10-27 12:58:19,114 - INFO - Processed DRG HCFA_208 (HCFA) for admission 27568122 - RESPIRATORY SYSTEM DIAGNOSIS W VENTILATOR SUPPORT ...
+2025-10-27 12:58:19,125 - INFO - Processed DRG APR_850 (APR) for admission 28506150 - PROCEDURE WITH DIAGNOSIS OF REHABILITATION, AFTERC...
+2025-10-27 12:58:19,134 - INFO - Processed DRG HCFA_939 (HCFA) for admission 28506150 - O.R. PROC W DIAGNOSES OF OTHER CONTACT W HEALTH SE...
+2025-10-27 12:58:19,144 - INFO - Processed DRG APR_130 (APR) for admission 29281842 - RESPIRATORY SYSTEM DIAGNOSIS WITH VENTILATOR SUPPO...
+2025-10-27 12:58:19,153 - INFO - Processed DRG HCFA_207 (HCFA) for admission 29281842 - RESPIRATORY SYSTEM DIAGNOSIS W VENTILATOR SUPPORT ...
+2025-10-27 12:58:19,155 - INFO - Successfully added 6 DRG nodes and created 6 links to HospitalAdmission nodes!
+2025-10-27 12:58:19,159 - INFO - 
+2025-10-27 12:58:19,159 - INFO - ================================================================================
+2025-10-27 12:58:19,160 - INFO - STEP 9/15: Running 9_add_micro_biology_events.py
+2025-10-27 12:58:19,160 - INFO - ================================================================================
+2025-10-27 12:58:19,160 - INFO - Using folder name: HeartPatient
+2025-10-27 12:58:19,164 - INFO - Checking for and deleting cross-connections...
+2025-10-27 12:58:19,195 - INFO - No cross-connections found.
+2025-10-27 12:58:19,261 - INFO - Added 23 microbiology events for event 37057036
+2025-10-27 12:58:19,319 - INFO - Added 26 microbiology events for event 32314488
+2025-10-27 12:58:19,336 - INFO - Added 1 microbiology events for event 30425410
+2025-10-27 12:58:19,338 - INFO - All microbiology events processed successfully!
+2025-10-27 12:58:19,341 - INFO - 
+2025-10-27 12:58:19,341 - INFO - ================================================================================
+2025-10-27 12:58:19,342 - INFO - STEP 10/15: Running 10_add_provider_nodes.py
+2025-10-27 12:58:19,342 - INFO - ================================================================================
+2025-10-27 12:58:19,343 - INFO - Using folder name: HeartPatient
+2025-10-27 12:58:19,349 - INFO - Connection successful!
+2025-10-27 12:58:19,352 - INFO - Found 3 admission records
+2025-10-27 12:58:19,353 - INFO - Found 2 unique providers linked to admissions
+2025-10-27 12:58:19,359 - INFO - Created/merged Provider P08WM1 -> HospitalAdmission 27568122
+2025-10-27 12:58:19,363 - INFO - Created/merged Provider P61W98 -> HospitalAdmission 28506150
+2025-10-27 12:58:19,366 - INFO - Created/merged Provider P61W98 -> HospitalAdmission 29281842
+2025-10-27 12:58:19,367 - INFO - Created 3 provider-admission relationships successfully!
+2025-10-27 12:58:19,374 - INFO - Summary: 2 providers, 3 admissions, 3 relationships
+2025-10-27 12:58:19,378 - INFO - 
+2025-10-27 12:58:19,378 - INFO - ================================================================================
+2025-10-27 12:58:19,378 - INFO - STEP 11/15: Running 11_add_assessment_nodes.py
+2025-10-27 12:58:19,379 - INFO - ================================================================================
+2025-10-27 12:58:19,379 - INFO - Using folder name: HeartPatient
+2025-10-27 12:58:19,380 - INFO - Loaded 4 triage records
+2025-10-27 12:58:19,387 - INFO - Created InitialAssessment for ED stay 33065303
+2025-10-27 12:58:19,392 - INFO - Created InitialAssessment for ED stay 33211001
+2025-10-27 12:58:19,395 - INFO - Created InitialAssessment for ED stay 33335871
+2025-10-27 12:58:19,400 - INFO - Created InitialAssessment for ED stay 36180820
+2025-10-27 12:58:19,402 - INFO - All initial assessment nodes created successfully!
+2025-10-27 12:58:19,405 - INFO - 
+2025-10-27 12:58:19,405 - INFO - ================================================================================
+2025-10-27 12:58:19,405 - INFO - STEP 12/15: Running 12_add_past_history.py
+2025-10-27 12:58:19,405 - INFO - ================================================================================
+2025-10-27 12:58:19,406 - INFO - Using folder name: HeartPatient
+2025-10-27 12:58:19,410 - INFO - Loaded 3 clinical note records
+2025-10-27 12:58:19,411 - INFO - Found 3 records with hadm_id
+2025-10-27 12:58:19,420 - INFO - Created/Updated PatientPastHistory for hadm_id 29281842
+2025-10-27 12:58:19,425 - INFO - Created/Updated PatientPastHistory for hadm_id 28506150
+2025-10-27 12:58:19,430 - INFO - Created/Updated PatientPastHistory for hadm_id 27568122
+2025-10-27 12:58:19,430 - INFO - 
+Summary:
+2025-10-27 12:58:19,431 - INFO -   Created/Updated: 3
+2025-10-27 12:58:19,431 - INFO -   Skipped (no admission or empty data): 0
+2025-10-27 12:58:19,431 - INFO - PatientPastHistory nodes created successfully!
+2025-10-27 12:58:19,433 - INFO - 
+2025-10-27 12:58:19,433 - INFO - ================================================================================
+2025-10-27 12:58:19,434 - INFO - STEP 13/15: Running 13_update_chief_complaints.py
+2025-10-27 12:58:19,434 - INFO - ================================================================================
+2025-10-27 12:58:19,434 - INFO - Using folder name: HeartPatient
+2025-10-27 12:58:19,437 - INFO - Loaded 3 clinical note records
+2025-10-27 12:58:19,438 - INFO - Found 3 records with hadm_id and chief_complaint
+2025-10-27 12:58:19,448 - INFO - Updated InitialAssessment for stay_id 36180820: 'Transfer, Dyspnea' -> 'Transfer, Dyspnea, Pneumonia'
+2025-10-27 12:58:19,454 - INFO - Updated InitialAssessment for stay_id 33065303: 'Transfer, Abnormal EKG' -> 'Transfer, Abnormal EKG, Decreased level of consciousness'
+2025-10-27 12:58:19,459 - INFO - Skipping duplicate complaint for stay_id 33335871: 'dyspnea' already in 'Dyspnea, Transfer'
+2025-10-27 12:58:19,460 - INFO - 
+Summary:
+2025-10-27 12:58:19,460 - INFO -   Updated: 2
+2025-10-27 12:58:19,460 - INFO -   Skipped (duplicate): 1
+2025-10-27 12:58:19,460 - INFO -   No ED/Assessment found: 0
+2025-10-27 12:58:19,460 - INFO - Chief complaint update completed successfully!
+2025-10-27 12:58:19,463 - INFO - 
+2025-10-27 12:58:19,463 - INFO - ================================================================================
+2025-10-27 12:58:19,463 - INFO - STEP 14/15: Running 15_add_discharge_clinical_note.py
+2025-10-27 12:58:19,463 - INFO - ================================================================================
+2025-10-27 12:58:19,464 - INFO - Using folder name: HeartPatient
+2025-10-27 12:58:19,466 - INFO - Loaded 3 clinical note records
+2025-10-27 12:58:19,467 - INFO - Found 3 records with hadm_id
+2025-10-27 12:58:19,611 - INFO - Created/Updated DischargeClinicalNote 10016742-DS-16 for hadm_id 29281842
+2025-10-27 12:58:19,727 - INFO - Created/Updated DischargeClinicalNote 10016742-DS-17 for hadm_id 28506150
+2025-10-27 12:58:19,869 - INFO - Created/Updated DischargeClinicalNote 10016742-DS-18 for hadm_id 27568122
+2025-10-27 12:58:19,870 - INFO - 
+Summary:
+2025-10-27 12:58:19,870 - INFO -   Created/Updated: 3
+2025-10-27 12:58:19,870 - INFO -   Skipped (no admission or missing data): 0
+2025-10-27 12:58:19,870 - INFO - DischargeClinicalNote nodes created successfully!
+2025-10-27 12:58:19,873 - INFO - 
+2025-10-27 12:58:19,874 - INFO - ================================================================================
+2025-10-27 12:58:19,874 - INFO - STEP 15/15: Running 14_delete_unwanted_connections_1.py
+2025-10-27 12:58:19,874 - INFO - ================================================================================
+2025-10-27 12:58:19,875 - INFO - Removing cross-connections between Prescription/Procedure/LabEvents hierarchies...
+2025-10-27 12:58:19,880 - INFO - Deleted 0 HAS_PROCEDURES from Prescription hierarchy to Procedures
+2025-10-27 12:58:19,883 - INFO - Deleted 21 HAS_LAB_EVENTS from Prescription hierarchy to LabEvents
+2025-10-27 12:58:19,885 - INFO - Deleted 0 HAS_PRESCRIPTIONS from Procedures to Prescription hierarchy
+2025-10-27 12:58:19,887 - INFO - Deleted 0 HAS_PRESCRIPTIONS from LabEvents to Prescription hierarchy
+2025-10-27 12:58:19,892 - INFO - Deleted 10 HAS_LAB_EVENTS from Procedures to LabEvents
+2025-10-27 12:58:19,895 - INFO - Deleted 0 HAS_PROCEDURES from LabEvents to Procedures
+2025-10-27 12:58:19,897 - INFO - Deleted 0 connections between Procedures and LabEvents
+2025-10-27 12:58:19,899 - INFO - Deleted 0 connections between Procedures and Prescriptions
+2025-10-27 12:58:19,901 - INFO - Deleted 0 connections between LabEvent and Prescription nodes
+2025-10-27 12:58:19,903 - INFO - Deleted 0 HAS_MICROBIOLOGY_EVENTS from Prescriptions to MicrobiologyEvents
+2025-10-27 12:58:19,905 - INFO - Deleted 0 HAS_MICROBIOLOGY_EVENTS from Procedures to MicrobiologyEvents
+2025-10-27 12:58:19,909 - INFO - Deleted 0 connections between Prescriptions and MicrobiologyEvents
+2025-10-27 12:58:19,911 - INFO - Deleted 0 connections between Procedures and MicrobiologyEvents
+2025-10-27 12:58:19,913 - INFO - Deleted 0 connections between LabEvents and MicrobiologyEvents
+2025-10-27 12:58:19,915 - INFO - Deleted 0 HAS_CHART_EVENTS from non-ICUStay nodes
+2025-10-27 12:58:19,919 - INFO - Deleted 0 unwanted relationships to/from ChartEventBatch
+2025-10-27 12:58:19,919 - INFO - 
+Total cross-connections deleted: 31
+2025-10-27 12:58:19,922 - INFO - 
+2025-10-27 12:58:19,922 - INFO - ================================================================================
+2025-10-27 12:58:19,922 - INFO - FULL LOAD SUMMARY
+2025-10-27 12:58:19,922 - INFO - ================================================================================
+2025-10-27 12:58:19,922 - INFO - Total steps: 15
+2025-10-27 12:58:19,923 - INFO - Successful: 15
+2025-10-27 12:58:19,923 - INFO - Failed: 0
+2025-10-27 12:58:19,923 - INFO - Total time: 2.78 seconds (0.05 minutes)
+2025-10-27 12:58:19,926 - INFO - Knowledge graph has been fully loaded.
+2025-10-27 12:58:19,926 - INFO - ================================================================================

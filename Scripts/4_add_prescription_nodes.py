@@ -49,7 +49,8 @@ def create_previous_prescription_meds(driver, folder_name):
                 query = """
                 MATCH (ed:EmergencyDepartment {event_id: $stay_id})
                 MERGE (prev:PreviousPrescriptionMeds {stay_id: $stay_id})
-                SET prev.medications = $medications,
+                SET prev.name = 'PreviousPrescriptionMeds',
+                    prev.medications = $medications,
                     prev.medication_count = $count,
                     prev.charttime = $charttime
                 MERGE (ed)-[:HAS_PREVIOUS_MEDS]->(prev)
@@ -94,7 +95,8 @@ def create_administered_meds(driver, folder_name):
                 query = """
                 MATCH (ed:EmergencyDepartment {event_id: $stay_id})
                 MERGE (admin:AdministeredMeds {stay_id: $stay_id})
-                SET admin.medications = $medications,
+                SET admin.name = 'AdministeredMeds',
+                    admin.medications = $medications,
                     admin.medication_count = $count,
                     admin.charttime = $charttime
                 MERGE (ed)-[:HAS_ADMINISTERED_MEDS]->(admin)
@@ -301,12 +303,11 @@ def create_prescription_nodes():
                     MERGE (p:Prescription {event_id: $event_id, starttime: $starttime})
                     SET p.medicines = $medicines,
                         p.medicine_count = $count,
-                        p.name = $name
+                        p.name = 'Prescription'
                     """
                     session.run(query_prescription, event_id=event_id, 
                                starttime=starttime.strftime('%Y-%m-%d %H:%M:%S'),
-                               medicines=medicines, count=len(medicines),
-                               name=f"Prescription_{prescription_counter}")
+                               medicines=medicines, count=len(medicines))
                     
                     # Link Prescription → PrescriptionsBatch
                     query_link_prescription = """

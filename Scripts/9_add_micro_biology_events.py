@@ -269,7 +269,7 @@ def create_microbiology_nodes():
                         "charttime": charttime.strftime('%Y-%m-%d %H:%M:%S'),
                         "micro_results": micro_results,
                         "micro_count": len(micro_results),
-                        "name": f"MicrobiologyEvent_{microevent_counter}"
+                        "name": "MicrobiologyEvent"
                     }
                     
                     query_microevent = """

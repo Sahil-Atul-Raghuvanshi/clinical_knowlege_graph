@@ -68,7 +68,9 @@ def create_initial_assessment_nodes():
                 query = """
                 MATCH (ed:EmergencyDepartment {event_id: $stay_id})
                 MERGE (ia:InitialAssessment {stay_id: $stay_id})
-                SET ia.temperature = $temperature,
+                ON CREATE SET 
+                    ia.name = 'InitialAssessment',
+                    ia.temperature = $temperature,
                     ia.heartrate = $heartrate,
                     ia.resprate = $resprate,
                     ia.o2sat = $o2sat,
@@ -77,6 +79,16 @@ def create_initial_assessment_nodes():
                     ia.pain = $pain,
                     ia.acuity = $acuity,
                     ia.chiefcomplaint = $chiefcomplaint
+                ON MATCH SET
+                    ia.name = 'InitialAssessment',
+                    ia.temperature = $temperature,
+                    ia.heartrate = $heartrate,
+                    ia.resprate = $resprate,
+                    ia.o2sat = $o2sat,
+                    ia.sbp = $sbp,
+                    ia.dbp = $dbp,
+                    ia.pain = $pain,
+                    ia.acuity = $acuity
                 MERGE (ed)-[:HAS_INITIAL_ASSESSMENT]->(ia)
                 """
                 

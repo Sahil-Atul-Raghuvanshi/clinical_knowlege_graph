@@ -239,6 +239,7 @@ def create_patient_flow():
                         h.hospital_expire_flag = $hospital_expire_flag,
                         h.hospital_admission_sequence_number = $seq_num
                     ON MATCH SET
+                        h.name = $name,
                         h.deathtime = $deathtime,
                         h.admission_type = $admission_type,
                         h.admit_provider_id = $admit_provider_id,
@@ -255,7 +256,7 @@ def create_patient_flow():
                     """
                     session.run(query,
                                 hadm_id=hadm_id,
-                                name=str(hadm_id),
+                                name='HospitalAdmission',
                                 subject_id=subject_id,
                                 admittime=adm_intime_str,
                                 dischtime=adm_outtime_str,
@@ -310,13 +311,8 @@ def create_patient_flow():
                         period = human_readable_period(intime, outtime)
                         label = event_label(event_type)
                         
-                        # Set name based on event type
-                        if event_type in ["admit", "transfer", "ed"]:
-                            name_value = careunit
-                        elif event_type == "discharge":
-                            name_value = "discharge"
-                        else:
-                            name_value = event_type
+                        # Set name to label
+                        name_value = label
 
                         query_node = f"""
                         MERGE (e:{label} {{event_id: $event_id}})
@@ -385,13 +381,6 @@ def create_patient_flow():
                         MERGE (h)-[:HAS_UNIT_ADMISSION]->(first_unit)
                         """
                         session.run(query_link, hadm_id=hadm_id, first_event_id=first_event_id)
-
-                    query_patient = """
-                    MATCH (p:Patient {subject_id: $subject_id})
-                    MATCH (h:HospitalAdmission {hadm_id: $hadm_id})
-                    MERGE (p)-[:HAS_VISIT]->(h)
-                    """
-                    session.run(query_patient, subject_id=int(subject_id), hadm_id=hadm_id)
 
                     logger.info(f"Processed hospital admission {hadm_id} (Seq {seq_num+1}) for subject {subject_id}")
 
