@@ -108,7 +108,7 @@ def add_discharge_clinical_note_nodes():
                     dcn.major_procedure = $major_procedure,
                     dcn.microbiology_findings = $microbiology_findings,
                     dcn.antibiotic_plan = $antibiotic_plan
-                MERGE (d)-[:HAS_DISCHARGE_NOTE]->(dcn)
+                MERGE (d)-[:DOCUMENTED_IN_NOTE]->(dcn)
                 RETURN d IS NOT NULL as discharge_exists, 
                        dcn.note_id as created_id
                 """

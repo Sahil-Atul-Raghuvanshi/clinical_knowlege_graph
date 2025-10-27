@@ -82,7 +82,7 @@ def add_past_history_nodes():
                     pph.past_medical_history = $past_medical_history,
                     pph.social_history = $social_history,
                     pph.family_history = $family_history
-                MERGE (ha)-[:HAS_PAST_HISTORY]->(pph)
+                MERGE (ha)-[:INCLUDED_PAST_HISTORY]->(pph)
                 RETURN ha IS NOT NULL as admission_exists, 
                        pph.hadm_id as created_id,
                        CASE WHEN ha IS NULL THEN false ELSE true END as created

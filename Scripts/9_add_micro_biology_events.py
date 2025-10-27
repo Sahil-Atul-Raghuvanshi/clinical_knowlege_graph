@@ -224,7 +224,7 @@ def create_microbiology_nodes():
                       AND NOT e:Prescription AND NOT e:Procedure AND NOT e:Procedures
                 MERGE (me:MicrobiologyEvents {event_id:$event_id, hadm_id:$hadm_id, subject_id:$subject_id})
                 ON CREATE SET me.name = "MicrobiologyEvents"
-                MERGE (e)-[:HAS_MICROBIOLOGY_EVENTS]->(me)
+                MERGE (e)-[:INCLUDED_MICROBIOLOGY_EVENTS]->(me)
                 """
                 session.run(query_microevents, event_id=event_id, hadm_id=hadm_id_int, subject_id=subject_id_int)
 
@@ -291,7 +291,7 @@ def create_microbiology_nodes():
                     MATCH (meb:MicrobiologyEvents {event_id: $event_id, hadm_id: $hadm_id, subject_id: $subject_id})
                     MATCH (me:MicrobiologyEvent {event_id: $event_id, hadm_id: $hadm_id, subject_id: $subject_id, 
                                                   micro_specimen_id: $micro_specimen_id, charttime: $charttime})
-                    MERGE (meb)-[:HAS_MICROBIOLOGY_EVENT]->(me)
+                    MERGE (meb)-[:CONTAINED_MICROBIOLOGY_EVENT]->(me)
                     """
                     session.run(query_link_microevent, event_id=event_id, hadm_id=hadm_id_int,
                                subject_id=subject_id_int, micro_specimen_id=int(specimen_id) if pd.notna(specimen_id) else None,

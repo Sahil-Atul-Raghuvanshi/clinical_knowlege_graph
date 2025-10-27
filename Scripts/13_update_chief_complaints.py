@@ -105,7 +105,7 @@ def update_chief_complaints():
                 # Find EmergencyDepartment node with this hadm_id and get InitialAssessment
                 query_get = """
                 MATCH (ed:EmergencyDepartment {hadm_id: $hadm_id})
-                OPTIONAL MATCH (ed)-[:HAS_INITIAL_ASSESSMENT]->(ia:InitialAssessment)
+                OPTIONAL MATCH (ed)-[:INCLUDED_TRIAGE_ASSESSMENT]->(ia:InitialAssessment)
                 RETURN ed.event_id as stay_id, 
                        ia.chiefcomplaint as current_complaint,
                        ia IS NOT NULL as has_assessment
@@ -142,7 +142,7 @@ def update_chief_complaints():
                 # Update the InitialAssessment node
                 query_update = """
                 MATCH (ed:EmergencyDepartment {event_id: $stay_id})
-                MATCH (ed)-[:HAS_INITIAL_ASSESSMENT]->(ia:InitialAssessment)
+                MATCH (ed)-[:INCLUDED_TRIAGE_ASSESSMENT]->(ia:InitialAssessment)
                 SET ia.chiefcomplaint = $updated_complaint
                 """
                 

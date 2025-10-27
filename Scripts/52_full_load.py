@@ -139,7 +139,7 @@ def main():
                 
                 # Delete connections FROM PrescriptionsBatch/Prescription TO Procedures
                 query1 = """
-                MATCH (p)-[r:HAS_PROCEDURES]->(proc)
+                MATCH (p)-[r:INCLUDED_PROCEDURES]->(proc)
                 WHERE (p:PrescriptionsBatch OR p:Prescription)
                   AND (proc:Procedures OR proc:ProceduresBatch)
                 DELETE r
@@ -147,11 +147,11 @@ def main():
                 """
                 result1 = session.run(query1)
                 count1 = result1.single()["deleted_count"]
-                logger.info(f"Deleted {count1} HAS_PROCEDURES from Prescription hierarchy to Procedures")
+                logger.info(f"Deleted {count1} INCLUDED_PROCEDURES from Prescription hierarchy to Procedures")
                 
                 # Delete connections FROM PrescriptionsBatch/Prescription TO LabEvents
                 query2 = """
-                MATCH (p)-[r:HAS_LAB_EVENTS]->(lab)
+                MATCH (p)-[r:INCLUDED_LAB_EVENTS]->(lab)
                 WHERE (p:PrescriptionsBatch OR p:Prescription)
                   AND (lab:LabEvents OR lab:LabEvent)
                 DELETE r
@@ -159,11 +159,11 @@ def main():
                 """
                 result2 = session.run(query2)
                 count2 = result2.single()["deleted_count"]
-                logger.info(f"Deleted {count2} HAS_LAB_EVENTS from Prescription hierarchy to LabEvents")
+                logger.info(f"Deleted {count2} INCLUDED_LAB_EVENTS from Prescription hierarchy to LabEvents")
                 
                 # Delete connections FROM Procedures TO PrescriptionsBatch/Prescription
                 query3 = """
-                MATCH (proc)-[r:HAS_PRESCRIPTIONS]->(p)
+                MATCH (proc)-[r:ISSUED_PRESCRIPTIONS]->(p)
                 WHERE (proc:Procedures OR proc:ProceduresBatch)
                   AND (p:PrescriptionsBatch OR p:Prescription)
                 DELETE r
@@ -171,11 +171,11 @@ def main():
                 """
                 result3 = session.run(query3)
                 count3 = result3.single()["deleted_count"]
-                logger.info(f"Deleted {count3} HAS_PRESCRIPTIONS from Procedures to Prescription hierarchy")
+                logger.info(f"Deleted {count3} ISSUED_PRESCRIPTIONS from Procedures to Prescription hierarchy")
                 
                 # Delete connections FROM LabEvents TO PrescriptionsBatch/Prescription
                 query4 = """
-                MATCH (lab)-[r:HAS_PRESCRIPTIONS]->(p)
+                MATCH (lab)-[r:ISSUED_PRESCRIPTIONS]->(p)
                 WHERE (lab:LabEvents OR lab:LabEvent)
                   AND (p:PrescriptionsBatch OR p:Prescription)
                 DELETE r
@@ -183,11 +183,11 @@ def main():
                 """
                 result4 = session.run(query4)
                 count4 = result4.single()["deleted_count"]
-                logger.info(f"Deleted {count4} HAS_PRESCRIPTIONS from LabEvents to Prescription hierarchy")
+                logger.info(f"Deleted {count4} ISSUED_PRESCRIPTIONS from LabEvents to Prescription hierarchy")
                 
                 # Delete connections FROM Procedures TO LabEvents
                 query5 = """
-                MATCH (proc)-[r:HAS_LAB_EVENTS]->(lab)
+                MATCH (proc)-[r:INCLUDED_LAB_EVENTS]->(lab)
                 WHERE (proc:Procedures OR proc:ProceduresBatch)
                   AND (lab:LabEvents OR lab:LabEvent)
                 DELETE r
@@ -195,11 +195,11 @@ def main():
                 """
                 result5 = session.run(query5)
                 count5 = result5.single()["deleted_count"]
-                logger.info(f"Deleted {count5} HAS_LAB_EVENTS from Procedures to LabEvents")
+                logger.info(f"Deleted {count5} INCLUDED_LAB_EVENTS from Procedures to LabEvents")
                 
                 # Delete connections FROM LabEvents TO Procedures
                 query6 = """
-                MATCH (lab)-[r:HAS_PROCEDURES]->(proc)
+                MATCH (lab)-[r:INCLUDED_PROCEDURES]->(proc)
                 WHERE (lab:LabEvents OR lab:LabEvent)
                   AND (proc:Procedures OR proc:ProceduresBatch)
                 DELETE r
@@ -207,7 +207,7 @@ def main():
                 """
                 result6 = session.run(query6)
                 count6 = result6.single()["deleted_count"]
-                logger.info(f"Deleted {count6} HAS_PROCEDURES from LabEvents to Procedures")
+                logger.info(f"Deleted {count6} INCLUDED_PROCEDURES from LabEvents to Procedures")
                 
                 # Delete ANY connections FROM Procedures TO LabEvents (bidirectional)
                 query7 = """
@@ -243,7 +243,7 @@ def main():
                 
                 # Delete connections FROM Prescriptions TO MicrobiologyEvents
                 query10 = """
-                MATCH (presc)-[r:HAS_MICROBIOLOGY_EVENTS]->(micro)
+                MATCH (presc)-[r:INCLUDED_MICROBIOLOGY_EVENTS]->(micro)
                 WHERE (presc:Prescription OR presc:PrescriptionsBatch)
                   AND (micro:MicrobiologyEvents OR micro:MicrobiologyEvent)
                 DELETE r
@@ -251,11 +251,11 @@ def main():
                 """
                 result10 = session.run(query10)
                 count10 = result10.single()["deleted_count"]
-                logger.info(f"Deleted {count10} HAS_MICROBIOLOGY_EVENTS from Prescriptions to MicrobiologyEvents")
+                logger.info(f"Deleted {count10} INCLUDED_MICROBIOLOGY_EVENTS from Prescriptions to MicrobiologyEvents")
                 
                 # Delete connections FROM Procedures TO MicrobiologyEvents
                 query11 = """
-                MATCH (proc)-[r:HAS_MICROBIOLOGY_EVENTS]->(micro)
+                MATCH (proc)-[r:INCLUDED_MICROBIOLOGY_EVENTS]->(micro)
                 WHERE (proc:Procedures OR proc:ProceduresBatch OR proc:Procedure)
                   AND (micro:MicrobiologyEvents OR micro:MicrobiologyEvent)
                 DELETE r
@@ -263,7 +263,7 @@ def main():
                 """
                 result11 = session.run(query11)
                 count11 = result11.single()["deleted_count"]
-                logger.info(f"Deleted {count11} HAS_MICROBIOLOGY_EVENTS from Procedures to MicrobiologyEvents")
+                logger.info(f"Deleted {count11} INCLUDED_MICROBIOLOGY_EVENTS from Procedures to MicrobiologyEvents")
                 
                 # Delete ANY connections between Prescriptions and MicrobiologyEvents (bidirectional)
                 query12 = """
@@ -301,23 +301,23 @@ def main():
                 count14 = result14.single()["deleted_count"]
                 logger.info(f"Deleted {count14} connections between LabEvents and MicrobiologyEvents")
                 
-                # Delete HAS_CHART_EVENTS from non-ICUStay nodes to ChartEventBatch
+                # Delete RECORDED_CHART_EVENTS from non-ICUStay nodes to ChartEventBatch
                 query15 = """
-                MATCH (n)-[r:HAS_CHART_EVENTS]->(ceb:ChartEventBatch)
+                MATCH (n)-[r:RECORDED_CHART_EVENTS]->(ceb:ChartEventBatch)
                 WHERE NOT n:ICUStay
                 DELETE r
                 RETURN count(r) as deleted_count
                 """
                 result15 = session.run(query15)
                 count15 = result15.single()["deleted_count"]
-                logger.info(f"Deleted {count15} HAS_CHART_EVENTS from non-ICUStay nodes")
+                logger.info(f"Deleted {count15} RECORDED_CHART_EVENTS from non-ICUStay nodes")
                 
-                # Delete ANY other relationships to/from ChartEventBatch except HAS_CHART_EVENTS from ICUStay and HAS_CHART_EVENT to ChartEvent
+                # Delete ANY other relationships to/from ChartEventBatch except RECORDED_CHART_EVENTS from ICUStay and CONTAINED_CHART_EVENT to ChartEvent
                 query16 = """
                 MATCH (n)-[r]-(ceb:ChartEventBatch)
                 WHERE NOT (
-                    (n:ICUStay AND type(r) = 'HAS_CHART_EVENTS') OR
-                    (n:ChartEvent AND type(r) = 'HAS_CHART_EVENT')
+                    (n:ICUStay AND type(r) = 'RECORDED_CHART_EVENTS') OR
+                    (n:ChartEvent AND type(r) = 'CONTAINED_CHART_EVENT')
                 )
                 DELETE r
                 RETURN count(r) as deleted_count

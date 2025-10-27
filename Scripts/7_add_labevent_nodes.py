@@ -154,7 +154,7 @@ def create_labevent_nodes():
                 WHERE NOT e:PrescriptionsBatch AND NOT e:ProceduresBatch AND NOT e:LabEvents AND NOT e:LabEvent
                 MERGE (le:LabEvents {event_id:$event_id, hadm_id:$hadm_id, subject_id:$subject_id})
                 ON CREATE SET le.name = "LabEvents"
-                MERGE (e)-[:HAS_LAB_EVENTS]->(le)
+                MERGE (e)-[:INCLUDED_LAB_EVENTS]->(le)
                 """
                 session.run(query_labevents, event_id=event_id, hadm_id=hadm_id_int, subject_id=subject_id_int)
 
@@ -231,7 +231,7 @@ def create_labevent_nodes():
                     query_link_labevent = """
                     MATCH (leb:LabEvents {event_id: $event_id, hadm_id: $hadm_id, subject_id: $subject_id})
                     MATCH (le:LabEvent {event_id: $event_id, hadm_id: $hadm_id, subject_id: $subject_id, charttime: $charttime})
-                    MERGE (leb)-[:HAS_LAB_EVENT]->(le)
+                    MERGE (leb)-[:CONTAINED_LAB_EVENT]->(le)
                     """
                     session.run(query_link_labevent, event_id=event_id, hadm_id=hadm_id_int,
                                subject_id=subject_id_int, charttime=charttime.strftime('%Y-%m-%d %H:%M:%S'))

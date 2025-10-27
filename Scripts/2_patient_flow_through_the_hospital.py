@@ -33,9 +33,19 @@ def event_label(event_type):
     return event_type.capitalize()
 
 def event_relationship(prev_type, next_type):
+    """Generate relationship name based on next event type"""
     if next_type is None:
         next_type = "unknown"
-    return f"LEADS_TO_{next_type.upper()}"
+    
+    # Map event types to appropriate relationship names
+    relationship_map = {
+        "discharge": "LED_TO_DISCHARGE",
+        "transfer": "LED_TO_TRANSFER",
+        "admit": "LED_TO_UNIT_ADMISSION",
+        "ed": "LED_TO_ED"
+    }
+    
+    return relationship_map.get(next_type.lower(), f"LED_TO_{next_type.upper()}")
 
 def human_readable_period(intime, outtime):
     if pd.notna(intime) and pd.notna(outtime):
@@ -105,12 +115,12 @@ def process_ed_stays(session, edstays_df, transfers_df, subject_id):
                    disposition=stay["disposition"] if pd.notna(stay["disposition"]) else None,
                    arrival_transport=stay["arrival_transport"] if pd.notna(stay["arrival_transport"]) else None)
         
-        # Only create HAS_ED_VISIT for standalone ED visits (no hospital admission)
+        # Only create VISITED_ED for standalone ED visits (no hospital admission)
         if pd.isna(hadm_id):
             query_patient = """
             MATCH (p:Patient {subject_id: $subject_id})
             MATCH (ed:EmergencyDepartment {event_id: $stay_id})
-            MERGE (p)-[:HAS_ED_VISIT]->(ed)
+            MERGE (p)-[:VISITED_ED]->(ed)
             """
             session.run(query_patient, subject_id=int(subject_id), stay_id=stay_id)
             logger.info(f"Processed standalone ED visit {stay_id} for subject {subject_id}")
@@ -280,7 +290,7 @@ def create_patient_flow():
                         query_gap = """
                         MATCH (d:Discharge {event_id: $discharge_id})
                         MATCH (h:HospitalAdmission {hadm_id: $hadm_id})
-                        MERGE (d)-[r:LEADS_TO_HOSPITAL_ADMISSION]->(h)
+                        MERGE (d)-[r:WAS_FOLLOWED_BY_ADMISSION]->(h)
                         ON CREATE SET r.gap = $gap
                         ON MATCH SET r.gap = $gap
                         """
@@ -378,7 +388,7 @@ def create_patient_flow():
                         query_link = """
                         MATCH (h:HospitalAdmission {hadm_id: $hadm_id})
                         MATCH (first_unit {event_id: $first_event_id})
-                        MERGE (h)-[:HAS_UNIT_ADMISSION]->(first_unit)
+                        MERGE (h)-[:BEGAN_WITH_UNIT_ADMISSION]->(first_unit)
                         """
                         session.run(query_link, hadm_id=hadm_id, first_event_id=first_event_id)
 

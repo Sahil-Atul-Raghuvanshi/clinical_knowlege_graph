@@ -85,7 +85,7 @@ def add_drg_codes():
                 query_link = """
                 MATCH (h:HospitalAdmission {hadm_id: $hadm_id})
                 MATCH (drg:DRG {drg_id: $drg_id})
-                MERGE (h)-[r:HAS_DRG_CODE]->(drg)
+                MERGE (h)-[r:WAS_ASSIGNED_DRG_CODE]->(drg)
                 ON CREATE SET r.subject_id = $subject_id
                 """
                 session.run(query_link,

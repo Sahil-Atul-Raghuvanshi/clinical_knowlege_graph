@@ -129,7 +129,7 @@ def create_hospital_admission_node(session, row):
         ha.family_history = $family_history,
         ha.hpi_summary = $hpi_summary,
         ha.hospital_course = $hospital_course
-    MERGE (p)-[:HAS_ADMISSION]->(ha)
+    MERGE (p)-[:UNDERWENT_ADMISSION]->(ha)
     RETURN p IS NOT NULL as patient_exists
     """
     
@@ -162,7 +162,7 @@ def create_admission_vitals_node(session, row):
         query += f", av.{key} = ${key}"
     
     query += """
-    MERGE (ha)-[:HAS_VITALS]->(av)
+    MERGE (ha)-[:RECORDED_VITALS]->(av)
     RETURN ha IS NOT NULL as admission_exists
     """
     
@@ -192,7 +192,7 @@ def create_admission_labs_node(session, row):
     SET al.name = 'AdmissionLabs',
         al.hadm_id = $hadm_id,
         al.lab_tests = $lab_tests
-    MERGE (ha)-[:HAS_LABS]->(al)
+    MERGE (ha)-[:INCLUDED_LAB_RESULTS]->(al)
     RETURN ha IS NOT NULL as admission_exists
     """
     
@@ -219,7 +219,7 @@ def create_admission_medications_node(session, row):
     SET am.name = 'AdmissionMedications',
         am.hadm_id = $hadm_id,
         am.medications = $medications
-    MERGE (ha)-[:HAS_MEDICATIONS]->(am)
+    MERGE (ha)-[:INCLUDED_MEDICATIONS]->(am)
     RETURN ha IS NOT NULL as admission_exists
     """
     
@@ -292,7 +292,7 @@ def create_discharge_clinical_note_node(session, row):
         dcn.facility_name = $facility_name,
         dcn.primary_diagnoses = $primary_diagnoses,
         dcn.secondary_diagnoses = $secondary_diagnoses
-    MERGE (d)-[:HAS_DISCHARGE_NOTE]->(dcn)
+    MERGE (d)-[:DOCUMENTED_IN_NOTE]->(dcn)
     RETURN d IS NOT NULL as discharge_exists
     """
     
@@ -328,7 +328,7 @@ def create_discharge_vitals_node(session, row):
         query += f", dv.{key} = ${key}"
     
     query += """
-    MERGE (dcn)-[:HAS_VITALS]->(dv)
+    MERGE (dcn)-[:RECORDED_VITALS]->(dv)
     RETURN dcn IS NOT NULL as note_exists
     """
     
@@ -361,7 +361,7 @@ def create_discharge_labs_node(session, row):
     SET dl.name = 'DischargeLabs',
         dl.note_id = $note_id,
         dl.lab_tests = $lab_tests
-    MERGE (dcn)-[:HAS_LABS]->(dl)
+    MERGE (dcn)-[:RECORDED_LAB_RESULTS]->(dl)
     RETURN dcn IS NOT NULL as note_exists
     """
     
@@ -391,7 +391,7 @@ def create_discharge_medications_node(session, row):
     SET dm.name = 'DischargeMedications',
         dm.note_id = $note_id,
         dm.medications = $medications
-    MERGE (dcn)-[:HAS_MEDICATIONS]->(dm)
+    MERGE (dcn)-[:RECORDED_MEDICATIONS]->(dm)
     RETURN dcn IS NOT NULL as note_exists
     """
     
@@ -453,7 +453,7 @@ def create_medications_started_node(session, row):
     SET ms.name = 'MedicationStarted',
         ms.hadm_id = $hadm_id,
         ms.medications = $medications
-    MERGE (d)-[:HAS_MEDICATIONS_STARTED]->(ms)
+    MERGE (d)-[:STARTED_MEDICATIONS]->(ms)
     RETURN d IS NOT NULL as discharge_exists
     """
     
@@ -480,7 +480,7 @@ def create_medications_stopped_node(session, row):
     SET ms.name = 'MedicationStopped',
         ms.hadm_id = $hadm_id,
         ms.medications = $medications
-    MERGE (d)-[:HAS_MEDICATIONS_STOPPED]->(ms)
+    MERGE (d)-[:STOPPED_MEDICATIONS]->(ms)
     RETURN d IS NOT NULL as discharge_exists
     """
     
@@ -507,7 +507,7 @@ def create_medications_to_avoid_node(session, row):
     SET ma.name = 'MedicationToAvoid',
         ma.hadm_id = $hadm_id,
         ma.medications = $medications
-    MERGE (d)-[:HAS_MEDICATIONS_TO_AVOID]->(ma)
+    MERGE (d)-[:LISTED_MEDICATIONS_TO_AVOID]->(ma)
     RETURN d IS NOT NULL as discharge_exists
     """
     

@@ -74,7 +74,7 @@ def add_provider_nodes():
                         p.name = 'Provider'
                     WITH p
                     MATCH (h:HospitalAdmission {hadm_id: $hadm_id})
-                    MERGE (p)-[:ADMITS_PATIENT]->(h)
+                    MERGE (p)-[:MANAGED_ADMISSION]->(h)
                     RETURN p.provider_id as created_provider
                     """
                     
@@ -99,7 +99,7 @@ def add_provider_nodes():
             admission_count = result.single()["admission_count"]
             
             # Count provider-admission relationships
-            result = session.run("MATCH (p:Provider)-[:ADMITS_PATIENT]->(h:HospitalAdmission) RETURN count(*) as relationship_count")
+            result = session.run("MATCH (p:Provider)-[:MANAGED_ADMISSION]->(h:HospitalAdmission) RETURN count(*) as relationship_count")
             rel_count = result.single()["relationship_count"]
             
             logger.info(f"Summary: {provider_count} providers, {admission_count} admissions, {rel_count} relationships")

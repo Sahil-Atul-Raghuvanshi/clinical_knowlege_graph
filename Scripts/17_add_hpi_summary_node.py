@@ -75,7 +75,7 @@ def add_hpi_summary_nodes():
                     hpi.name = 'HPISummary',
                     hpi.note_id = $note_id,
                     hpi.summary = $hpi_summary
-                MERGE (ha)-[:HAS_HPI_SUMMARY]->(hpi)
+                MERGE (ha)-[:INCLUDED_HPI_SUMMARY]->(hpi)
                 RETURN ha IS NOT NULL as admission_exists, 
                        hpi.hadm_id as created_id
                 """

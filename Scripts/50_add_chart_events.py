@@ -145,7 +145,7 @@ def create_chart_event_nodes():
                     ceb.name = "ChartEvents",
                     ceb.hadm_id = $hadm_id,
                     ceb.subject_id = $subject_id
-                MERGE (icu)-[:HAS_CHART_EVENTS]->(ceb)
+                MERGE (icu)-[:RECORDED_CHART_EVENTS]->(ceb)
                 """
                 session.run(query_batch, 
                           event_id=event_id, 
@@ -215,7 +215,7 @@ def create_chart_event_nodes():
                     query_link_chartevent = """
                     MATCH (ceb:ChartEventBatch {event_id: $event_id})
                     MATCH (ce:ChartEvent {event_id: $event_id, charttime: $charttime})
-                    MERGE (ceb)-[:HAS_CHART_EVENT]->(ce)
+                    MERGE (ceb)-[:CONTAINED_CHART_EVENT]->(ce)
                     """
                     session.run(query_link_chartevent, 
                               event_id=event_id, 

@@ -53,7 +53,7 @@ def create_previous_prescription_meds(driver, folder_name):
                     prev.medications = $medications,
                     prev.medication_count = $count,
                     prev.charttime = $charttime
-                MERGE (ed)-[:HAS_PREVIOUS_MEDS]->(prev)
+                MERGE (ed)-[:RECORDED_PREVIOUS_MEDICATIONS]->(prev)
                 """
                 session.run(query,
                           stay_id=str(stay_id),
@@ -99,7 +99,7 @@ def create_administered_meds(driver, folder_name):
                     admin.medications = $medications,
                     admin.medication_count = $count,
                     admin.charttime = $charttime
-                MERGE (ed)-[:HAS_ADMINISTERED_MEDS]->(admin)
+                MERGE (ed)-[:ADMINISTERED_MEDICATIONS]->(admin)
                 """
                 session.run(query,
                           stay_id=str(stay_id),
@@ -202,10 +202,10 @@ def create_prescription_nodes():
             if count4 > 0:
                 logger.info(f"Deleted {count4} connections between Prescription and LabEvents")
             
-            # Delete incorrect HAS_PRESCRIPTIONS relationships from non-event nodes
+            # Delete incorrect ISSUED_PRESCRIPTIONS relationships from non-event nodes
             query5 = """
-            MATCH (n)-[r:HAS_PRESCRIPTIONS]->(pb:PrescriptionsBatch)
-            WHERE NOT (n:UnitAdmission OR n:EmergencyDepartment OR n:Discharge)
+            MATCH (n)-[r:ISSUED_PRESCRIPTIONS]->(pb:PrescriptionsBatch)
+            WHERE NOT (n:UnitAdmission OR n:EmergencyDepartment OR n:Discharge OR n:ICUStay)
             DELETE r
             RETURN count(r) as deleted_count
             """
@@ -256,10 +256,10 @@ def create_prescription_nodes():
                 # Create PrescriptionsBatch node (central container) and link it to the Event
                 query_prescriptions_batch = """
                 MATCH (e {event_id: $event_id})
-                WHERE e:UnitAdmission OR e:EmergencyDepartment OR e:Discharge
+                WHERE e:UnitAdmission OR e:EmergencyDepartment OR e:Discharge OR e:ICUStay
                 MERGE (pb:PrescriptionsBatch {event_id: $event_id})
                 ON CREATE SET pb.name = "PrescriptionsBatch"
-                MERGE (e)-[:HAS_PRESCRIPTIONS]->(pb)
+                MERGE (e)-[:ISSUED_PRESCRIPTIONS]->(pb)
                 """
                 session.run(query_prescriptions_batch, event_id=event_id)
 
@@ -313,7 +313,7 @@ def create_prescription_nodes():
                     query_link_prescription = """
                     MATCH (pb:PrescriptionsBatch {event_id: $event_id})
                     MATCH (p:Prescription {event_id: $event_id, starttime: $starttime})
-                    MERGE (pb)-[:HAS_PRESCRIPTION]->(p)
+                    MERGE (pb)-[:CONTAINED_PRESCRIPTION]->(p)
                     """
                     session.run(query_link_prescription, event_id=event_id, 
                                starttime=starttime.strftime('%Y-%m-%d %H:%M:%S'))

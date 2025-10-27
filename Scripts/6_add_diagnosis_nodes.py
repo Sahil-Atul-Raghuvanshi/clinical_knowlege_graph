@@ -65,7 +65,7 @@ def create_ed_diagnosis_nodes(driver, folder_name):
                 SET diag.name = 'Diagnosis',
                     diag.complete_diagnosis = $titles,
                     diag.diagnosis_count = $count
-                MERGE (ed)-[:HAS_DIAGNOSES]->(diag)
+                MERGE (ed)-[:RECORDED_DIAGNOSES]->(diag)
                 """
                 session.run(query_ed_diagnosis,
                           stay_id=stay_id,
@@ -121,7 +121,7 @@ def add_primary_secondary_diagnoses(driver, folder_name):
                 
                 # Update Diagnosis node with primary and secondary diagnoses arrays
                 update_query = """
-                MATCH (d:Discharge {hadm_id: $hadm_id})-[:HAS_DIAGNOSES]->(diag:Diagnosis)
+                MATCH (d:Discharge {hadm_id: $hadm_id})-[:RECORDED_DIAGNOSES]->(diag:Diagnosis)
                 SET diag.primary_diagnoses = $primary_diagnoses,
                     diag.secondary_diagnoses = $secondary_diagnoses,
                     diag.primary_count = $primary_count,
@@ -227,7 +227,7 @@ def create_diagnosis_nodes():
                 SET diag.name = 'Diagnosis',
                     diag.complete_diagnosis = $titles,
                     diag.diagnosis_count = $count
-                MERGE (d)-[:HAS_DIAGNOSES]->(diag)
+                MERGE (d)-[:RECORDED_DIAGNOSES]->(diag)
                 """
                 session.run(query_diagnosis, event_id=event_id, hadm_id=hadm_id_int, 
                            subject_id=subject_id_int, titles=diagnosis_titles, count=len(diags_for_admission))

@@ -296,14 +296,14 @@ def create_procedure_nodes():
                         MATCH (e:ICUStay {event_id: $event_id})
                         MERGE (pb:ProceduresBatch {event_id: $event_id, hadm_id: $hadm_id, subject_id: $subject_id})
                         ON CREATE SET pb.name = "Procedures"
-                        MERGE (e)-[:HAS_PROCEDURES]->(pb)
+                        MERGE (e)-[:INCLUDED_PROCEDURES]->(pb)
                         """
                     else:  # HospitalAdmission
                         query_batch = """
                         MATCH (h:HospitalAdmission {hadm_id: $event_id})
                         MERGE (pb:ProceduresBatch {event_id: $event_id, hadm_id: $hadm_id, subject_id: $subject_id})
                         ON CREATE SET pb.name = "Procedures"
-                        MERGE (h)-[:HAS_PROCEDURES]->(pb)
+                        MERGE (h)-[:INCLUDED_PROCEDURES]->(pb)
                         """
                     
                     hadm_id_for_batch = int(hadm_id_raw) if hadm_id_raw is not None else None
@@ -337,7 +337,7 @@ def create_procedure_nodes():
                         query_link_procedures = """
                         MATCH (pb:ProceduresBatch {event_id: $event_id})
                         MATCH (p:Procedures {event_id: $event_id, time: $time})
-                        MERGE (pb)-[:HAS_PROCEDURES]->(p)
+                        MERGE (pb)-[:CONTAINED_PROCEDURE]->(p)
                         """
                         session.run(query_link_procedures, event_id=event_id, time=proc_group['time_str'])
                         

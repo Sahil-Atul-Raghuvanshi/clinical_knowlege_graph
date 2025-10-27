@@ -89,7 +89,7 @@ def create_initial_assessment_nodes():
                     ia.dbp = $dbp,
                     ia.pain = $pain,
                     ia.acuity = $acuity
-                MERGE (ed)-[:HAS_INITIAL_ASSESSMENT]->(ia)
+                MERGE (ed)-[:INCLUDED_TRIAGE_ASSESSMENT]->(ia)
                 """
                 
                 session.run(query, **properties)
