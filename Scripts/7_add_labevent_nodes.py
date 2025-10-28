@@ -167,6 +167,7 @@ def create_labevent_nodes():
                     # Format: "item_label=valuenum+valueuom (ref: lower-upper) [flag] fluid, category"
                     # Example: "PTT=40.6sec (ref: 25-35) [abnormal] Blood, Blood Gas"
                     lab_results = []
+                    abnormal_results = []
                     for _, row in labevent_data.iterrows():
                         item_label = str(row["label"]) if pd.notna(row["label"]) else "Unknown"
                         valuenum = float(row["valuenum"]) if pd.notna(row["valuenum"]) else None
@@ -202,6 +203,16 @@ def create_labevent_nodes():
                         # Combine all parts
                         lab_result_str = f"{measurement}{ref_part}{flag_part}{metadata_part}"
                         lab_results.append(lab_result_str)
+                        
+                        # Check if result is abnormal (outside reference range)
+                        is_abnormal = False
+                        if valuenum is not None and ref_lower is not None and ref_upper is not None:
+                            if valuenum < ref_lower or valuenum > ref_upper:
+                                is_abnormal = True
+                        
+                        # Add to abnormal_results if it's abnormal
+                        if is_abnormal:
+                            abnormal_results.append(lab_result_str)
                     
                     # Create LabEvent node with aggregated lab results as array of strings
                     labevent_props = {
@@ -210,7 +221,9 @@ def create_labevent_nodes():
                         "subject_id": subject_id_int,
                         "charttime": charttime.strftime('%Y-%m-%d %H:%M:%S'),
                         "lab_results": lab_results,
+                        "abnormal_results": abnormal_results,
                         "lab_count": len(lab_results),
+                        "abnormal_count": len(abnormal_results),
                         "name": "LabEvent"
                     }
                     
@@ -222,7 +235,9 @@ def create_labevent_nodes():
                         charttime: $charttime
                     })
                     SET le.lab_results = $lab_results,
+                        le.abnormal_results = $abnormal_results,
                         le.lab_count = $lab_count,
+                        le.abnormal_count = $abnormal_count,
                         le.name = $name
                     """
                     session.run(query_labevent, **labevent_props)

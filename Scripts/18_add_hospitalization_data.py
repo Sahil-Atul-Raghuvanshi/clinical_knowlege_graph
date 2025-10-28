@@ -92,14 +92,9 @@ def create_hospital_admission_node(session, row):
         'hadm_id': hadm_id,
         'note_id': str(row['note_id']) if pd.notna(row['note_id']) else None,
         'service': str(row['service']) if pd.notna(row['service']) else None,
-        'allergies': str(row['allergies']) if pd.notna(row['allergies']) else None,
         'chief_complaint': str(row['chief_complaint']) if pd.notna(row['chief_complaint']) else None,
-        'major_procedure': str(row['major_procedure']) if pd.notna(row['major_procedure']) else None,
-        'past_medical_history': str(row['past_medical_history']) if pd.notna(row['past_medical_history']) else None,
         'social_history': str(row['social_history']) if pd.notna(row['social_history']) else None,
-        'family_history': str(row['family_history']) if pd.notna(row['family_history']) else None,
-        'hpi_summary': str(row['hpi_summary']) if pd.notna(row['hpi_summary']) else None,
-        'hospital_course': str(row['hospital_course']) if pd.notna(row['hospital_course']) else None
+        'family_history': str(row['family_history']) if pd.notna(row['family_history']) else None
     }
     
     query = """
@@ -109,26 +104,16 @@ def create_hospital_admission_node(session, row):
         ha.subject_id = $subject_id,
         ha.note_id = $note_id,
         ha.service = $service,
-        ha.allergies = $allergies,
         ha.chief_complaint = $chief_complaint,
-        ha.major_procedure = $major_procedure,
-        ha.past_medical_history = $past_medical_history,
         ha.social_history = $social_history,
-        ha.family_history = $family_history,
-        ha.hpi_summary = $hpi_summary,
-        ha.hospital_course = $hospital_course
+        ha.family_history = $family_history
     ON MATCH SET
         ha.subject_id = $subject_id,
         ha.note_id = $note_id,
         ha.service = $service,
-        ha.allergies = $allergies,
         ha.chief_complaint = $chief_complaint,
-        ha.major_procedure = $major_procedure,
-        ha.past_medical_history = $past_medical_history,
         ha.social_history = $social_history,
-        ha.family_history = $family_history,
-        ha.hpi_summary = $hpi_summary,
-        ha.hospital_course = $hospital_course
+        ha.family_history = $family_history
     MERGE (p)-[:UNDERWENT_ADMISSION]->(ha)
     RETURN p IS NOT NULL as patient_exists
     """
@@ -409,7 +394,9 @@ def create_discharge_node(session, row):
         'hadm_id': hadm_id,
         'note_id': str(row['note_id']) if pd.notna(row['note_id']) else None,
         'disposition': str(row['disposition']) if pd.notna(row['disposition']) else None,
-        'facility_name': str(row['facility_name']) if pd.notna(row['facility_name']) else None
+        'facility_name': str(row['facility_name']) if pd.notna(row['facility_name']) else None,
+        'allergies': str(row['allergies']) if pd.notna(row['allergies']) else None,
+        'major_procedure': str(row['major_procedure']) if pd.notna(row['major_procedure']) else None
     }
     
     query = """
@@ -420,13 +407,17 @@ def create_discharge_node(session, row):
         d.subject_id = $subject_id,
         d.note_id = $note_id,
         d.disposition = $disposition,
-        d.facility_name = $facility_name
+        d.facility_name = $facility_name,
+        d.allergies = $allergies,
+        d.major_procedure = $major_procedure
     ON MATCH SET
         d.name = 'Discharge',
         d.subject_id = $subject_id,
         d.note_id = $note_id,
         d.disposition = $disposition,
-        d.facility_name = $facility_name
+        d.facility_name = $facility_name,
+        d.allergies = $allergies,
+        d.major_procedure = $major_procedure
     RETURN p IS NOT NULL as patient_exists
     """
     

@@ -158,7 +158,51 @@ def create_microbiology_nodes():
             if count9 > 0:
                 logger.info(f"Deleted {count9} connections between Procedures and MicrobiologyEvents")
             
-            total_deleted = count1 + count2 + count3 + count4 + count5 + count6 + count7 + count8 + count9
+            # Delete old CONTAINED_MICROBIOLOGY_EVENT relationships
+            query10 = """
+            MATCH ()-[r:CONTAINED_MICROBIOLOGY_EVENT]->()
+            DELETE r
+            RETURN count(r) as deleted_count
+            """
+            result10 = session.run(query10)
+            count10 = result10.single()["deleted_count"]
+            if count10 > 0:
+                logger.info(f"Deleted {count10} old CONTAINED_MICROBIOLOGY_EVENT relationships")
+            
+            # Delete old INCLUDED_MICROBIOLOGY_EVENTS relationships
+            query11 = """
+            MATCH ()-[r:INCLUDED_MICROBIOLOGY_EVENTS]->()
+            DELETE r
+            RETURN count(r) as deleted_count
+            """
+            result11 = session.run(query11)
+            count11 = result11.single()["deleted_count"]
+            if count11 > 0:
+                logger.info(f"Deleted {count11} old INCLUDED_MICROBIOLOGY_EVENTS relationships")
+            
+            # Delete old MicrobiologyEvents batch nodes
+            query12 = """
+            MATCH (me:MicrobiologyEvents)
+            DETACH DELETE me
+            RETURN count(me) as deleted_count
+            """
+            result12 = session.run(query12)
+            count12 = result12.single()["deleted_count"]
+            if count12 > 0:
+                logger.info(f"Deleted {count12} old MicrobiologyEvents batch nodes")
+            
+            # Delete old MicrobiologyEvent nodes (to ensure clean recreation)
+            query13 = """
+            MATCH (me:MicrobiologyEvent)
+            DETACH DELETE me
+            RETURN count(me) as deleted_count
+            """
+            result13 = session.run(query13)
+            count13 = result13.single()["deleted_count"]
+            if count13 > 0:
+                logger.info(f"Deleted {count13} old MicrobiologyEvent nodes")
+            
+            total_deleted = count1 + count2 + count3 + count4 + count5 + count6 + count7 + count8 + count9 + count10 + count11 + count12 + count13
             if total_deleted > 0:
                 logger.info(f"Total cross-connections deleted: {total_deleted}")
             else:
@@ -216,17 +260,18 @@ def create_microbiology_nodes():
                 if microevents_for_event.empty:
                     continue
 
-                # Create MicrobiologyEvents node (central node) and link it to the Event
-                query_microevents = """
+                # Ensure LabEvents node exists for this event (it should already exist from lab events script)
+                # If it doesn't exist, create it
+                query_ensure_labevents = """
                 MATCH (e {event_id:$event_id})
                 WHERE NOT e:PrescriptionsBatch AND NOT e:ProceduresBatch AND NOT e:LabEvents AND NOT e:LabEvent 
                       AND NOT e:MicrobiologyEvents AND NOT e:MicrobiologyEvent
                       AND NOT e:Prescription AND NOT e:Procedure AND NOT e:Procedures
-                MERGE (me:MicrobiologyEvents {event_id:$event_id, hadm_id:$hadm_id, subject_id:$subject_id})
-                ON CREATE SET me.name = "MicrobiologyEvents"
-                MERGE (e)-[:INCLUDED_MICROBIOLOGY_EVENTS]->(me)
+                MERGE (le:LabEvents {event_id:$event_id, hadm_id:$hadm_id, subject_id:$subject_id})
+                ON CREATE SET le.name = "LabEvents"
+                MERGE (e)-[:INCLUDED_LAB_EVENTS]->(le)
                 """
-                session.run(query_microevents, event_id=event_id, hadm_id=hadm_id_int, subject_id=subject_id_int)
+                session.run(query_ensure_labevents, event_id=event_id, hadm_id=hadm_id_int, subject_id=subject_id_int)
 
                 # Group microbiology events by specimen_id and charttime to create MicrobiologyEvent nodes
                 microevent_groups = microevents_for_event.groupby(['micro_specimen_id', 'charttime'])
@@ -286,12 +331,12 @@ def create_microbiology_nodes():
                     """
                     session.run(query_microevent, **microevent_props)
                     
-                    # Link MicrobiologyEvent → MicrobiologyEvents
+                    # Link MicrobiologyEvent → LabEvents
                     query_link_microevent = """
-                    MATCH (meb:MicrobiologyEvents {event_id: $event_id, hadm_id: $hadm_id, subject_id: $subject_id})
+                    MATCH (le:LabEvents {event_id: $event_id, hadm_id: $hadm_id, subject_id: $subject_id})
                     MATCH (me:MicrobiologyEvent {event_id: $event_id, hadm_id: $hadm_id, subject_id: $subject_id, 
                                                   micro_specimen_id: $micro_specimen_id, charttime: $charttime})
-                    MERGE (meb)-[:CONTAINED_MICROBIOLOGY_EVENT]->(me)
+                    MERGE (le)-[:CONTAINED_MICROBIOLOGY_EVENT]->(me)
                     """
                     session.run(query_link_microevent, event_id=event_id, hadm_id=hadm_id_int,
                                subject_id=subject_id_int, micro_specimen_id=int(specimen_id) if pd.notna(specimen_id) else None,

@@ -57,23 +57,27 @@ def add_drg_codes():
                 drg_id = f"{drg_type}_{drg_code}"
                 
                 # Create or update DRG node
+                # Name should be HCFA_DRG or APR_DRG based on drg_type
+                drg_name = f"{drg_type}_DRG"
+                
                 query_drg = """
                 MERGE (drg:DRG {drg_id: $drg_id})
                 ON CREATE SET 
-                    drg.name = 'DRG',
+                    drg.name = $drg_name,
                     drg.drg_type = $drg_type,
                     drg.drg_code = $drg_code,
                     drg.description = $description,
                     drg.drg_severity = $drg_severity,
                     drg.drg_mortality = $drg_mortality
                 ON MATCH SET
-                    drg.name = 'DRG',
+                    drg.name = $drg_name,
                     drg.description = $description,
                     drg.drg_severity = $drg_severity,
                     drg.drg_mortality = $drg_mortality
                 """
                 session.run(query_drg,
                            drg_id=drg_id,
+                           drg_name=drg_name,
                            drg_type=drg_type,
                            drg_code=drg_code,
                            description=description,

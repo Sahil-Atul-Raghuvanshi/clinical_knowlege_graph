@@ -1,7 +1,0 @@
-2025-10-27 12:41:02,318 - INFO - ================================================================================
-2025-10-27 12:41:02,319 - INFO - STARTING FULL KNOWLEDGE GRAPH LOAD
-2025-10-27 12:41:02,319 - INFO - ================================================================================
-2025-10-27 12:41:02,319 - INFO - 
-2025-10-27 12:41:02,323 - ERROR - Failed to import scripts: cannot import name 'add_patient_nodes' from 'Scripts' (unknown location)
-2025-10-27 12:41:02,323 - ERROR - Trying alternative import method...
-2025-10-27 12:41:02,324 - ERROR - Failed alternative import: No module named 'add_patient_nodes'

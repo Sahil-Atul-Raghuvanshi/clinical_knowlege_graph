@@ -289,17 +289,41 @@ def main():
                 count13 = result13.single()["deleted_count"]
                 logger.info(f"Deleted {count13} connections between Procedures and MicrobiologyEvents")
                 
-                # Delete ANY connections between LabEvents and MicrobiologyEvents (bidirectional)
-                query14 = """
-                MATCH (lab)-[r]-(micro)
-                WHERE (lab:LabEvents OR lab:LabEvent)
-                  AND (micro:MicrobiologyEvents OR micro:MicrobiologyEvent)
+                # Delete old MicrobiologyEvents batch nodes and INCLUDED_MICROBIOLOGY_EVENTS relationships
+                # But keep CONTAINED_MICROBIOLOGY_EVENT from LabEvents to MicrobiologyEvent
+                query14a = """
+                MATCH ()-[r:INCLUDED_MICROBIOLOGY_EVENTS]->()
                 DELETE r
                 RETURN count(r) as deleted_count
                 """
-                result14 = session.run(query14)
-                count14 = result14.single()["deleted_count"]
-                logger.info(f"Deleted {count14} connections between LabEvents and MicrobiologyEvents")
+                result14a = session.run(query14a)
+                count14a = result14a.single()["deleted_count"]
+                logger.info(f"Deleted {count14a} old INCLUDED_MICROBIOLOGY_EVENTS relationships")
+                
+                query14b = """
+                MATCH (me:MicrobiologyEvents)
+                DETACH DELETE me
+                RETURN count(me) as deleted_count
+                """
+                result14b = session.run(query14b)
+                count14b = result14b.single()["deleted_count"]
+                logger.info(f"Deleted {count14b} old MicrobiologyEvents batch nodes")
+                
+                # Delete unwanted connections between LabEvents and MicrobiologyEvents
+                # but preserve CONTAINED_MICROBIOLOGY_EVENT from LabEvents to MicrobiologyEvent
+                query14c = """
+                MATCH (lab)-[r]-(micro)
+                WHERE (lab:LabEvents OR lab:LabEvent)
+                  AND (micro:MicrobiologyEvents OR micro:MicrobiologyEvent)
+                  AND NOT (lab:LabEvents AND type(r) = 'CONTAINED_MICROBIOLOGY_EVENT' AND micro:MicrobiologyEvent)
+                DELETE r
+                RETURN count(r) as deleted_count
+                """
+                result14c = session.run(query14c)
+                count14c = result14c.single()["deleted_count"]
+                logger.info(f"Deleted {count14c} unwanted connections between LabEvents and MicrobiologyEvents")
+                
+                count14 = count14a + count14b + count14c
                 
                 # Delete RECORDED_CHART_EVENTS from non-ICUStay nodes to ChartEventBatch
                 query15 = """
