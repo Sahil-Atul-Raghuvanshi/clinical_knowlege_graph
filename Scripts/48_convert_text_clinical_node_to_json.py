@@ -28,17 +28,17 @@ def create_prompt(clinical_note, schema):
     
     schema_str = json.dumps(schema, indent=2)
     
-    prompt = f"""You are a medical data extraction and summarization expert. Your task is to extract and SUMMARIZE structured information from a clinical discharge note and convert it into a clean, organized JSON format.
+    prompt = f"""You are a medical data extraction expert. Your task is to extract structured information from a clinical discharge note and convert it into a clean, organized JSON format. Preserve all content from the original note.
 
 **CRITICAL FORMATTING RULES:**
 1. REMOVE all newline characters (\\n) - write text as single-line strings
 2. REMOVE or replace all redacted placeholders (___) with appropriate values:
-   - For names/identifiers: use null or empty string
-   - For numbers/values: extract actual values if visible
-3. SUMMARIZE long text blocks - DO NOT copy verbatim:
-   - History of Present Illness: 2-3 sentence summary
-   - Hospital Course: Brief summary for each problem (1-2 sentences each)
-   - Physical exam: Keep concise descriptions
+   - For names/identifiers: use empty string "" or null
+   - For numbers/values: use empty string "" or extract actual values if visible nearby
+3. PRESERVE all original text content - DO NOT summarize or shorten:
+   - Extract complete text from all sections
+   - Keep full descriptions and details as written
+   - Maintain complete patient history, exam findings, and clinical narratives
 4. CLEAN and structure the data:
    - Extract numerical values cleanly (e.g., "Temperature: 99" not "T:99")
    - Format medications as readable strings: "Aspirin 81 mg PO daily"
@@ -55,7 +55,7 @@ def create_prompt(clinical_note, schema):
 {clinical_note}
 
 **REQUIRED OUTPUT:**
-Provide clean, summarized JSON following the schema. Remember: NO newlines in strings, NO ___ placeholders, SUMMARIZE long text, extract clean values."""
+Provide clean JSON following the schema with complete content preserved. Remember: NO newlines in strings, replace ___ with empty string "", PRESERVE all original text content without summarization."""
 
     return prompt
 

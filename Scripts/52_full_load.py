@@ -76,6 +76,7 @@ def main():
         script12 = import_module_from_file(os.path.join(script_dir, "12_add_past_history.py"), "add_past_history")
         script13 = import_module_from_file(os.path.join(script_dir, "13_update_chief_complaints.py"), "update_chief_complaints")
         script15 = import_module_from_file(os.path.join(script_dir, "15_add_discharge_clinical_note.py"), "add_discharge_clinical_note")
+        script16 = import_module_from_file(os.path.join(script_dir, "16_add_allergies_identified_node.py"), "add_allergies_identified_node")
         script17 = import_module_from_file(os.path.join(script_dir, "17_add_hpi_summary_node.py"), "add_hpi_summary_node")
         script18 = import_module_from_file(os.path.join(script_dir, "18_add_hospitalization_data.py"), "add_hospitalization_data")
         logger.info("All script modules loaded successfully!")
@@ -100,6 +101,7 @@ def main():
         ("12_add_past_history.py", lambda: script12.add_past_history_nodes()),
         ("13_update_chief_complaints.py", lambda: script13.update_chief_complaints()),
         ("15_add_discharge_clinical_note.py", lambda: script15.add_discharge_clinical_note_nodes()),
+        ("16_add_allergies_identified_node.py", lambda: script16.add_allergy_identified_nodes()),
         ("17_add_hpi_summary_node.py", lambda: script17.add_hpi_summary_nodes()),
         ("18_add_hospitalization_data.py", lambda: script18.add_hospitalization_data()),
     ]

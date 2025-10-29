@@ -14,13 +14,13 @@
     "Chief Complaint": "string",
     "Major Surgical or Invasive Procedure": "string or array of strings",
     "Past Medical History": ["string"],
-    "Social History": "string (summarized)",
-    "Family History": "string (summarized)"
+    "Social History": "string",
+    "Family History": "string"
   },
   "History of Present Illness": {
-    "Summary": "string (concise summary, 2-3 sentences)",
+    "Summary": "string",
     "ED Findings": {
-      "General": "string (brief description)",
+      "General": "string",
       "Vitals": {
         "Temperature": "number or string",
         "Heart Rate": "number or string",
@@ -32,9 +32,9 @@
     "ED Labs": {
       "description": "Extract key abnormal values as key-value pairs"
     },
-    "Imaging": "string (brief summary of key findings)",
+    "Imaging": "string",
     "Initial Treatment": ["string"],
-    "ICU/MICU Status": "string (brief description)"
+    "ICU/MICU Status": "string"
   },
   "Physical Examination": {
     "Admission Exam": {
@@ -77,11 +77,11 @@
     {
       "Study Type": "string",
       "Date": "string or null",
-      "Findings": "string (brief summary)"
+      "Findings": "string"
     }
   ],
   "Hospital Course": {
-    "description": "Summarize each problem/diagnosis with brief description of management"
+    "description": "Extract each problem/diagnosis with description of management as written"
   },
   "Transitional Issues": {
     "Antibiotic Plan": "string",
@@ -110,7 +110,7 @@
       "Level of Consciousness": "string",
       "Activity Status": "string"
     },
-    "Discharge Instructions": "string (brief summary)",
+    "Discharge Instructions": "string",
     "Follow-up": "string or null"
   }
 }

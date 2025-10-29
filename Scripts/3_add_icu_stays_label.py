@@ -54,9 +54,10 @@ def add_icu_stays_label():
                 los = float(row["los"])  # Length of stay in days
                 
                 # Find the UnitAdmission node by event_id (which was set from transfer_id)
-                # and add ICUStay label plus additional properties
+                # Remove UnitAdmission label and replace with ICUStay label plus additional properties
                 query = """
                 MATCH (u:UnitAdmission {event_id: $event_id})
+                REMOVE u:UnitAdmission
                 SET u:ICUStay,
                     u.first_careunit = $first_careunit,
                     u.last_careunit = $last_careunit,
@@ -73,12 +74,12 @@ def add_icu_stays_label():
                 record = result.single()
                 if record:
                     icu_count += 1
-                    logger.info(f"Added ICUStay label to {record['careunit']} (stay_id: {stay_id}, LOS: {los:.2f} days)")
+                    logger.info(f"Converted to ICUStay: {record['careunit']} (stay_id: {stay_id}, LOS: {los:.2f} days)")
                 else:
                     logger.warning(f"Could not find UnitAdmission node with event_id: {stay_id}")
         
-        logger.info(f"Successfully added ICUStay label to {icu_count} UnitAdmission nodes!")
-        logger.info(f"These nodes now have dual labels: :UnitAdmission:ICUStay")
+        logger.info(f"Successfully converted {icu_count} UnitAdmission nodes to ICUStay!")
+        logger.info(f"ICU admissions now have exclusive :ICUStay label (UnitAdmission label removed)")
         
     except FileNotFoundError:
         logger.error(f"File not found: {ICUSTAYS_CSV}")
