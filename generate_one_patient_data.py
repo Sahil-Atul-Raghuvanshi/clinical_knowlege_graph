@@ -1,101 +1,136 @@
 import pandas as pd
 import os
-import json
-from pathlib import Path
 import shutil
+from pathlib import Path
 
-def create_one_patient_data(target_subject_id=10035631):
-    """
-    Filter data for a specific subject_id from Batch_Data folder
-    and save filtered results to One_Patient folder.
-    """
-    source_folder = "Batch_Data"
-    dest_folder = "One_Patient"
+def create_directory_structure():
+    """Create the same directory structure in Filtered_Data as in Complete_Data"""
+    base_path = Path("Filtered_Data")
     
-    # Create destination folder if it doesn't exist
-    Path(dest_folder).mkdir(exist_ok=True)
-    print(f"Created/verified destination folder: {dest_folder}")
-    
-    # Load schema to understand which files have subject_id
-    with open("Scripts/schema.json", "r") as f:
-        schemas = json.load(f)
-    
-    # Files that contain subject_id and need filtering
-    files_with_subject_id = []
-    # Files that don't contain subject_id (dictionary/reference files)
-    reference_files = []
-    
-    for schema in schemas:
-        filename = schema["file_name"]
-        if "subject_id" in schema["columns"]:
-            files_with_subject_id.append(filename)
-        else:
-            reference_files.append(filename)
-    
-    print(f"\nFiles with subject_id to filter: {files_with_subject_id}")
-    print(f"Reference files to copy as-is: {reference_files}")
-    
-    # Process files with subject_id filtering
-    total_records = 0
-    for filename in files_with_subject_id:
-        source_path = os.path.join(source_folder, filename)
-        dest_path = os.path.join(dest_folder, filename)
+    # Create main directories
+    directories = ["hosp", "icu", "ed", "note"]
+    for dir_name in directories:
+        dir_path = base_path / dir_name
+        dir_path.mkdir(parents=True, exist_ok=True)
+        print(f"Created directory: {dir_path}")
+
+def filter_csv_by_subject_ids_chunked(input_file, output_file, subject_ids, chunk_size=10000):
+    """Filter a CSV file by multiple subject_ids using chunked reading for large files"""
+    try:
+        print(f"Processing: {input_file}")
         
-        try:
-            print(f"\nProcessing {filename}...")
+        # Check if file exists and get its size
+        if not os.path.exists(input_file):
+            print(f"File not found: {input_file}")
+            return False
             
-            # Read the CSV file
-            df = pd.read_csv(source_path)
-            print(f"  Original records: {len(df)}")
-            
-            # Filter for the target subject_id
-            filtered_df = df[df['subject_id'] == target_subject_id]
-            print(f"  Filtered records: {len(filtered_df)}")
-            
-            # Save filtered data
-            filtered_df.to_csv(dest_path, index=False)
-            total_records += len(filtered_df)
-            
-            if len(filtered_df) > 0:
-                print(f"  ✓ Saved to {dest_path}")
-            else:
-                print(f"  ⚠ No records found for subject_id {target_subject_id}")
-                
-        except Exception as e:
-            print(f"  ✗ Error processing {filename}: {str(e)}")
-    
-    # Copy reference files (no filtering needed)
-    print(f"\nCopying reference files...")
-    for filename in reference_files:
-        source_path = os.path.join(source_folder, filename)
-        dest_path = os.path.join(dest_folder, filename)
+        file_size = os.path.getsize(input_file) / (1024 * 1024)  # Size in MB
+        print(f"File size: {file_size:.1f} MB")
         
-        try:
-            shutil.copy2(source_path, dest_path)
-            print(f"  ✓ Copied {filename}")
-        except Exception as e:
-            print(f"  ✗ Error copying {filename}: {str(e)}")
-    
-    print(f"\n" + "="*50)
-    print(f"SUMMARY")
-    print(f"="*50)
-    print(f"Target Subject ID: {target_subject_id}")
-    print(f"Total filtered records: {total_records}")
-    print(f"Files processed: {len(files_with_subject_id)} filtered + {len(reference_files)} copied")
-    print(f"Output directory: {dest_folder}/")
-    
-    # List all output files
-    output_files = list(Path(dest_folder).glob("*.csv"))
-    print(f"\nGenerated files:")
-    for file_path in sorted(output_files):
-        file_size = file_path.stat().st_size
-        if file_size < 1024:
-            size_str = f"{file_size} B"
-        elif file_size < 1024*1024:
-            size_str = f"{file_size/1024:.1f} KB"
+        # Read first chunk to check columns
+        first_chunk = pd.read_csv(input_file, nrows=1)
+        
+        # Check if subject_id column exists
+        if 'subject_id' not in first_chunk.columns:
+            print(f"No 'subject_id' column found in {input_file} - copying entire file")
+            # Copy the entire file to the filtered folder
+            shutil.copy2(input_file, output_file)
+            print(f"[SUCCESS] Copied entire file {input_file} to {output_file}")
+            return True
+        
+        # Process file in chunks
+        filtered_rows = []
+        total_rows = 0
+        
+        for chunk in pd.read_csv(input_file, chunksize=chunk_size):
+            total_rows += len(chunk)
+            # Filter for all subject_ids in the list
+            filtered_chunk = chunk[chunk['subject_id'].isin(subject_ids)]
+            if len(filtered_chunk) > 0:
+                filtered_rows.append(filtered_chunk)
+            
+            # Progress indicator for large files
+            if total_rows % (chunk_size * 10) == 0:
+                print(f"  Processed {total_rows:,} rows...")
+        
+        # Combine all filtered chunks
+        if filtered_rows:
+            filtered_df = pd.concat(filtered_rows, ignore_index=True)
+            filtered_df.to_csv(output_file, index=False)
+            print(f"[SUCCESS] Filtered {len(filtered_df)} rows from {total_rows:,} total rows in {input_file}")
         else:
-            size_str = f"{file_size/(1024*1024):.1f} MB"
-        print(f"  - {file_path.name} ({size_str})")
+            # Create empty file with headers
+            first_chunk.iloc[0:0].to_csv(output_file, index=False)
+            print(f"[SUCCESS] No matching rows found in {input_file} (processed {total_rows:,} rows)")
+        
+        return True
+        
+    except Exception as e:
+        print(f"[ERROR] Error processing {input_file}: {str(e)}")
+        return False
+
+def main():
+    """Main function to filter all CSV files by multiple subject_ids"""
+    # Define the list of subject_ids to filter
+    # You can modify this list to include any subject_ids you want
+    subject_ids = [10016742]  # Add more subject_ids as needed, e.g., [10016742, 10002495, 10003456]
+    
+    print(f"\n{'='*80}")
+    print(f"FILTERING DATA FOR SUBJECT IDs: {subject_ids}")
+    print(f"Source: Complete_Data/")
+    print(f"Destination: Filtered_Data/")
+    print(f"{'='*80}\n")
+    
+    # Create directory structure
+    create_directory_structure()
+    
+    # Define the mapping of source directories to target directories
+    directories = {
+        "Complete_Data\\hosp": "Filtered_Data\\hosp",
+        "Complete_Data\\icu": "Filtered_Data\\icu",
+        "Complete_Data\\ed": "Filtered_Data\\ed",
+        "Complete_Data\\note": "Filtered_Data\\note",
+    }
+    
+    total_files_processed = 0
+    total_files_successful = 0
+    
+    for source_dir, target_dir in directories.items():
+        print(f"\nProcessing directory: {source_dir}")
+        print(f"-" * 80)
+        
+        # Check if source directory exists
+        if not os.path.exists(source_dir):
+            print(f"Source directory {source_dir} does not exist, skipping...")
+            continue
+            
+        # Get all CSV files in the source directory
+        csv_files = [f for f in os.listdir(source_dir) if f.endswith('.csv')]
+        
+        if not csv_files:
+            print(f"No CSV files found in {source_dir}")
+            continue
+            
+        print(f"Found {len(csv_files)} CSV files to process")
+        
+        for csv_file in csv_files:
+            input_path = os.path.join(source_dir, csv_file)
+            output_path = os.path.join(target_dir, csv_file)
+            
+            total_files_processed += 1
+            
+            if filter_csv_by_subject_ids_chunked(input_path, output_path, subject_ids):
+                total_files_successful += 1
+    
+    print(f"\n{'='*80}")
+    print(f"=== SUMMARY ===")
+    print(f"{'='*80}")
+    print(f"Subject IDs filtered: {subject_ids}")
+    print(f"Total files processed: {total_files_processed}")
+    print(f"Successfully processed: {total_files_successful}")
+    print(f"Failed: {total_files_processed - total_files_successful}")
+    print(f"Data saved to Filtered_Data/ (filtered by subject_ids or copied entirely if no subject_id column)")
+    print(f"{'='*80}\n")
 
 if __name__ == "__main__":
-    create_one_patient_data(target_subject_id=10035631)
+    main()

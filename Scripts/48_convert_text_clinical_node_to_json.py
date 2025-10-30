@@ -226,8 +226,8 @@ def process_clinical_notes(input_csv, output_csv, schema_path):
 
 def main():
     # Define file paths
-    input_csv = "Filtered_Data/HeartPatient/discharge_clinical_note.csv"
-    output_csv = "Filtered_Data/HeartPatient/discharge_clinical_note_json.csv"
+    input_csv = "Filtered_Data/note/discharge.csv"
+    output_csv = "Filtered_Data/note/discharge_clinical_note_json.csv"
     schema_path = "Scripts/clinical_note_schema.json"
     
     # Check if input files exist

@@ -8,30 +8,14 @@ import os
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-def get_folder_name():
-    """Read folder name from foldername.txt"""
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        foldername_path = os.path.join(script_dir, 'foldername.txt')
-        with open(foldername_path, 'r') as f:
-            folder_name = f.read().strip()
-        logger.info(f"Using folder name: {folder_name}")
-        return folder_name
-    except Exception as e:
-        logger.error(f"Error reading folder name: {e}")
-        raise
-
 def add_discharge_clinical_note_nodes():
-    # Get dynamic folder name
-    folder_name = get_folder_name()
-    
     # Neo4j configuration
     URI = "neo4j://127.0.0.1:7687"
     AUTH = ("neo4j", "admin123")
     DATABASE = "10016742"
 
     # File path
-    CLINICAL_NOTES_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\discharge_clinical_note_flattened.csv"
+    CLINICAL_NOTES_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\note\discharge_clinical_note_flattened.csv"
 
     driver = GraphDatabase.driver(URI, auth=AUTH, database=DATABASE)
 
@@ -59,21 +43,21 @@ def add_discharge_clinical_note_nodes():
                     skipped_count += 1
                     continue
                 
-                # Prepare properties, handling NaN values
+                # Prepare properties, handling NaN values and missing columns
                 properties = {
                     'note_id': note_id,
                     'hadm_id': hadm_id,
-                    'mental_status': str(row['mental_status']) if pd.notna(row['mental_status']) else None,
-                    'level_of_consciousness': str(row['level_of_consciousness']) if pd.notna(row['level_of_consciousness']) else None,
-                    'activity_status': str(row['activity_status']) if pd.notna(row['activity_status']) else None,
-                    'discharge_instructions': str(row['discharge_instructions']) if pd.notna(row['discharge_instructions']) else None,
-                    'disposition': str(row['disposition']) if pd.notna(row['disposition']) else None,
-                    'hospital_course': str(row['hospital_course']) if pd.notna(row['hospital_course']) else None,
-                    'imaging_count': int(row['imaging_count']) if pd.notna(row['imaging_count']) else None,
-                    'imaging_studies': str(row['imaging_studies']) if pd.notna(row['imaging_studies']) else None,
-                    'major_procedure': str(row['major_procedure']) if pd.notna(row['major_procedure']) else None,
-                    'microbiology_findings': str(row['microbiology_findings']) if pd.notna(row['microbiology_findings']) else None,
-                    'antibiotic_plan': str(row['antibiotic_plan']) if pd.notna(row['antibiotic_plan']) else None
+                    'mental_status': str(row.get('mental_status')) if pd.notna(row.get('mental_status')) else None,
+                    'level_of_consciousness': str(row.get('level_of_consciousness')) if pd.notna(row.get('level_of_consciousness')) else None,
+                    'activity_status': str(row.get('activity_status')) if pd.notna(row.get('activity_status')) else None,
+                    'discharge_instructions': str(row.get('discharge_instructions')) if pd.notna(row.get('discharge_instructions')) else None,
+                    'disposition': str(row.get('disposition')) if pd.notna(row.get('disposition')) else None,
+                    'hospital_course': str(row.get('hospital_course')) if pd.notna(row.get('hospital_course')) else None,
+                    'imaging_count': int(row.get('imaging_count')) if pd.notna(row.get('imaging_count')) else None,
+                    'imaging_studies': str(row.get('imaging_studies')) if pd.notna(row.get('imaging_studies')) else None,
+                    'major_procedure': str(row.get('major_procedure')) if pd.notna(row.get('major_procedure')) else None,
+                    'microbiology_findings': str(row.get('microbiology_findings')) if pd.notna(row.get('microbiology_findings')) else None,
+                    'antibiotic_plan': str(row.get('antibiotic_plan')) if pd.notna(row.get('antibiotic_plan')) else None
                 }
                 
                 # Create DischargeClinicalNote node and link to Discharge

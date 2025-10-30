@@ -8,22 +8,9 @@ import os
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-def get_folder_name():
-    """Read folder name from foldername.txt"""
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        foldername_path = os.path.join(script_dir, 'foldername.txt')
-        with open(foldername_path, 'r') as f:
-            folder_name = f.read().strip()
-        logger.info(f"Using folder name: {folder_name}")
-        return folder_name
-    except Exception as e:
-        logger.error(f"Error reading folder name: {e}")
-        raise
-
-def create_previous_prescription_meds(driver, folder_name):
+def create_previous_prescription_meds(driver):
     """Create PreviousPrescriptionMeds nodes from medrecon data"""
-    MEDRECON_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\medrecon.csv"
+    MEDRECON_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\ed\medrecon.csv"
     
     try:
         # Load medrecon data
@@ -67,9 +54,9 @@ def create_previous_prescription_meds(driver, folder_name):
         logger.error(f"Error processing previous prescription meds: {e}")
         raise
 
-def create_administered_meds(driver, folder_name):
+def create_administered_meds(driver):
     """Create AdministeredMeds nodes from pyxis data"""
-    PYXIS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\pyxis.csv"
+    PYXIS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\ed\pyxis.csv"
     
     try:
         # Load pyxis data
@@ -114,17 +101,13 @@ def create_administered_meds(driver, folder_name):
         raise
 
 def create_prescription_nodes():
-    # Get dynamic folder name
-    folder_name = get_folder_name()
-    
     # Neo4j configuration
     URI = "neo4j://127.0.0.1:7687"
     AUTH = ("neo4j", "admin123")
     DATABASE = "10016742"
 
-    # File paths - dynamically constructed
-    PRESCRIPTIONS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\prescriptions.csv"
-    MEDRECON_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\medrecon.csv"
+    # File paths
+    PRESCRIPTIONS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\hosp\prescriptions.csv"
 
     driver = GraphDatabase.driver(URI, auth=AUTH, database=DATABASE)
 
@@ -325,11 +308,11 @@ def create_prescription_nodes():
         logger.info("All prescriptions processed successfully!")
 
         # Process previous prescription meds
-        create_previous_prescription_meds(driver, folder_name)
+        create_previous_prescription_meds(driver)
         logger.info("Previous prescription meds processed successfully!")
 
         # Process administered meds
-        create_administered_meds(driver, folder_name)
+        create_administered_meds(driver)
         logger.info("Administered meds processed successfully!")
 
     except Exception as e:

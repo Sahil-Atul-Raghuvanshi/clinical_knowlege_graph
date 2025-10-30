@@ -1,2 +1,0 @@
-subject_id,hadm_id,admittime,dischtime,deathtime,admission_type,admit_provider_id,admission_location,discharge_location,insurance,language,marital_status,race,edregtime,edouttime,hospital_expire_flag
-10035631,29462354,2112-09-17 19:13:00,2112-10-17 01:41:00,,DIRECT EMER.,P45GUA,PHYSICIAN REFERRAL,HOME,Other,ENGLISH,MARRIED,UNKNOWN,2112-09-17 18:46:00,2112-09-17 19:50:00,0

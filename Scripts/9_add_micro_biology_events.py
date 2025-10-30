@@ -7,23 +7,7 @@ import os
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-def get_folder_name():
-    """Read folder name from foldername.txt"""
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        foldername_path = os.path.join(script_dir, 'foldername.txt')
-        with open(foldername_path, 'r') as f:
-            folder_name = f.read().strip()
-        logger.info(f"Using folder name: {folder_name}")
-        return folder_name
-    except Exception as e:
-        logger.error(f"Error reading folder name: {e}")
-        raise
-
 def create_microbiology_nodes():
-    # Get dynamic folder name
-    folder_name = get_folder_name()
-    
     # Neo4j configuration
     URI = "neo4j://127.0.0.1:7687"
     AUTH = ("neo4j", "admin123")
@@ -31,8 +15,8 @@ def create_microbiology_nodes():
 
     driver = GraphDatabase.driver(URI, auth=AUTH, database=DATABASE)
 
-    # File paths - dynamically constructed
-    MICROEVENTS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\microbiologyevents.csv"
+    # File paths
+    MICROEVENTS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\hosp\microbiologyevents.csv"
 
     # Load CSV
     microevents_df = pd.read_csv(MICROEVENTS_CSV)

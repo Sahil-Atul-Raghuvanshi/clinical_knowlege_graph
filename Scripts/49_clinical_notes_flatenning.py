@@ -187,6 +187,9 @@ def flatten_json_data(json_str):
                 if value:
                     micro_findings.append(f"{key}: {value}")
             flattened['microbiology_findings'] = '; '.join(micro_findings) if micro_findings else None
+    else:
+        # Always include the field, even if None
+        flattened['microbiology_findings'] = None
     
     # Imaging Studies - Count and summary
     imaging_studies = data.get('Imaging Studies', [])
@@ -359,8 +362,8 @@ def process_clinical_notes_csv(input_csv, output_csv):
 
 def main():
     # Define file paths
-    input_csv = "Filtered_Data/HeartPatient/discharge_clinical_note_json.csv"
-    output_csv = "Filtered_Data/HeartPatient/discharge_clinical_note_flattened.csv"
+    input_csv = "Filtered_Data/note/discharge_clinical_note_json.csv"
+    output_csv = "Filtered_Data/note/discharge_clinical_note_flattened.csv"
     
     # Check if input file exists
     if not os.path.exists(input_csv):

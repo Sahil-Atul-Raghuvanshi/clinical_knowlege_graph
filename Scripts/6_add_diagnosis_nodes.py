@@ -18,25 +18,12 @@ def parse_diagnoses(diagnosis_string):
     diagnoses = [d for d in diagnoses if d]
     return diagnoses
 
-def get_folder_name():
-    """Read folder name from foldername.txt"""
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        foldername_path = os.path.join(script_dir, 'foldername.txt')
-        with open(foldername_path, 'r') as f:
-            folder_name = f.read().strip()
-        logger.info(f"Using folder name: {folder_name}")
-        return folder_name
-    except Exception as e:
-        logger.error(f"Error reading folder name: {e}")
-        raise
-
-def create_ed_diagnosis_nodes(driver, folder_name):
+def create_ed_diagnosis_nodes(driver):
     """Create diagnosis nodes for Emergency Department visits"""
     logger.info("Processing ED diagnoses...")
     
     # File path for ED diagnosis
-    ED_DIAGNOSIS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\ed_diagnosis.csv"
+    ED_DIAGNOSIS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\ed\diagnosis.csv"
     
     try:
         # Load ED diagnosis data
@@ -79,12 +66,12 @@ def create_ed_diagnosis_nodes(driver, folder_name):
         logger.error(f"Error processing ED diagnoses: {e}")
         raise
 
-def add_primary_secondary_diagnoses(driver, folder_name):
+def add_primary_secondary_diagnoses(driver):
     """Add primary and secondary diagnoses as arrays to Diagnosis nodes from clinical notes"""
     logger.info("Processing primary and secondary diagnoses from clinical notes...")
     
     # File path
-    CLINICAL_NOTES_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\discharge_clinical_note_flattened.csv"
+    CLINICAL_NOTES_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\note\discharge_clinical_note_flattened.csv"
     
     try:
         # Check if file exists
@@ -156,9 +143,6 @@ def add_primary_secondary_diagnoses(driver, folder_name):
         raise
 
 def create_diagnosis_nodes():
-    # Get dynamic folder name
-    folder_name = get_folder_name()
-    
     # Neo4j configuration
     URI = "neo4j://127.0.0.1:7687"
     AUTH = ("neo4j", "admin123")
@@ -166,9 +150,9 @@ def create_diagnosis_nodes():
 
     driver = GraphDatabase.driver(URI, auth=AUTH, database=DATABASE)
 
-    # File paths - dynamically constructed
-    DIAGNOSES_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\diagnoses_icd.csv"
-    ICD_LOOKUP_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\d_icd_diagnoses.csv"
+    # File paths
+    DIAGNOSES_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\hosp\diagnoses_icd.csv"
+    ICD_LOOKUP_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\hosp\d_icd_diagnoses.csv"
 
     # Load CSVs
     diag_df = pd.read_csv(DIAGNOSES_CSV)
@@ -242,10 +226,10 @@ def create_diagnosis_nodes():
 
     try:
         # Process ED diagnoses
-        create_ed_diagnosis_nodes(driver, folder_name)
+        create_ed_diagnosis_nodes(driver)
         
         # Process primary and secondary diagnoses from clinical notes
-        add_primary_secondary_diagnoses(driver, folder_name)
+        add_primary_secondary_diagnoses(driver)
     finally:
         driver.close()
 

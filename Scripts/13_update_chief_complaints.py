@@ -9,18 +9,6 @@ import re
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-def get_folder_name():
-    """Read folder name from foldername.txt"""
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        foldername_path = os.path.join(script_dir, 'foldername.txt')
-        with open(foldername_path, 'r') as f:
-            folder_name = f.read().strip()
-        logger.info(f"Using folder name: {folder_name}")
-        return folder_name
-    except Exception as e:
-        logger.error(f"Error reading folder name: {e}")
-        raise
 
 def normalize_text(text):
     """Normalize text for semantic comparison"""
@@ -66,16 +54,13 @@ def is_semantically_duplicate(existing_complaint, new_complaint):
     return False
 
 def update_chief_complaints():
-    # Get dynamic folder name
-    folder_name = get_folder_name()
-    
     # Neo4j configuration
     URI = "neo4j://127.0.0.1:7687"
     AUTH = ("neo4j", "admin123")
     DATABASE = "10016742"
 
     # File path
-    CLINICAL_NOTES_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\discharge_clinical_note_flattened.csv"
+    CLINICAL_NOTES_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\note\discharge_clinical_note_flattened.csv"
 
     driver = GraphDatabase.driver(URI, auth=AUTH, database=DATABASE)
 

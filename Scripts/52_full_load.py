@@ -6,8 +6,18 @@ import time
 from datetime import datetime
 import importlib.util
 
+# Get the project root directory (parent of Scripts directory)
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(script_dir)
+
+# Create logs directory if it doesn't exist
+logs_dir = os.path.join(project_root, 'logs')
+if not os.path.exists(logs_dir):
+    os.makedirs(logs_dir)
+    print(f"Created logs directory: {logs_dir}")
+
 # Configure logging with UTF-8 encoding
-log_filename = f'full_load_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
+log_filename = os.path.join(logs_dir, f'full_load_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
 file_handler = logging.FileHandler(log_filename, encoding='utf-8')
 stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.stream.reconfigure(encoding='utf-8') if hasattr(stream_handler.stream, 'reconfigure') else None
@@ -52,12 +62,10 @@ def main():
     logger.info("=" * 80)
     logger.info("STARTING FULL KNOWLEDGE GRAPH LOAD")
     logger.info("=" * 80)
+    logger.info(f"Log file: {log_filename}")
     logger.info("")
     
     overall_start_time = time.time()
-    
-    # Get the Scripts directory path
-    script_dir = os.path.dirname(os.path.abspath(__file__))
     
     # Import all required modules dynamically
     try:

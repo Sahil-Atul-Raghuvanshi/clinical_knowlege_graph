@@ -8,18 +8,6 @@ import os
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-def get_folder_name():
-    """Read folder name from foldername.txt"""
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        foldername_path = os.path.join(script_dir, 'foldername.txt')
-        with open(foldername_path, 'r') as f:
-            folder_name = f.read().strip()
-        logger.info(f"Using folder name: {folder_name}")
-        return folder_name
-    except Exception as e:
-        logger.error(f"Error reading folder name: {e}")
-        raise
 
 def event_label(event_type):
     if event_type == "ed":
@@ -72,7 +60,7 @@ def process_ed_stays(session, edstays_df, transfers_df, subject_id):
     patient_edstays = edstays_df[edstays_df["subject_id"] == subject_id].copy()
     patient_edstays = patient_edstays.sort_values(by="intime").reset_index(drop=True)
     
-    for _, stay in patient_edstays.iterrows():
+    for seq_num, stay in patient_edstays.iterrows():
         stay_id = str(stay["stay_id"])
         hadm_id = stay["hadm_id"] if pd.notna(stay["hadm_id"]) else None
         intime = stay["intime"]
@@ -94,7 +82,8 @@ def process_ed_stays(session, edstays_df, transfers_df, subject_id):
             ed.outtime = $outtime,
             ed.period = $period,
             ed.disposition = $disposition,
-            ed.arrival_transport = $arrival_transport
+            ed.arrival_transport = $arrival_transport,
+            ed.ed_seq_num = $ed_seq_num
         ON MATCH SET
             ed.name = 'Emergency Department',
             ed.subject_id = $subject_id,
@@ -103,7 +92,8 @@ def process_ed_stays(session, edstays_df, transfers_df, subject_id):
             ed.outtime = $outtime,
             ed.period = $period,
             ed.disposition = $disposition,
-            ed.arrival_transport = $arrival_transport
+            ed.arrival_transport = $arrival_transport,
+            ed.ed_seq_num = $ed_seq_num
         """
         session.run(query_ed,
                    stay_id=stay_id,
@@ -113,32 +103,33 @@ def process_ed_stays(session, edstays_df, transfers_df, subject_id):
                    outtime=outtime_str,
                    period=period,
                    disposition=stay["disposition"] if pd.notna(stay["disposition"]) else None,
-                   arrival_transport=stay["arrival_transport"] if pd.notna(stay["arrival_transport"]) else None)
+                   arrival_transport=stay["arrival_transport"] if pd.notna(stay["arrival_transport"]) else None,
+                   ed_seq_num=seq_num + 1)
         
-        # Only create VISITED_ED for standalone ED visits (no hospital admission)
+        # Always link Patient to ED (both standalone and admission-linked)
+        query_patient = """
+        MATCH (p:Patient {subject_id: $subject_id})
+        MATCH (ed:EmergencyDepartment {event_id: $stay_id})
+        MERGE (p)-[:VISITED_ED]->(ed)
+        """
+        session.run(query_patient, subject_id=int(subject_id), stay_id=stay_id)
+        
         if pd.isna(hadm_id):
-            query_patient = """
-            MATCH (p:Patient {subject_id: $subject_id})
-            MATCH (ed:EmergencyDepartment {event_id: $stay_id})
-            MERGE (p)-[:VISITED_ED]->(ed)
-            """
-            session.run(query_patient, subject_id=int(subject_id), stay_id=stay_id)
-            logger.info(f"Processed standalone ED visit {stay_id} for subject {subject_id}")
+            logger.info(f"Processed standalone ED visit {stay_id} (Seq {seq_num+1}) for subject {subject_id}")
+        else:
+            logger.info(f"Processed ED visit {stay_id} (Seq {seq_num+1}) with hospital admission {hadm_id} for subject {subject_id}")
 
 def create_patient_flow():
-    # Get dynamic folder name
-    folder_name = get_folder_name()
-    
     # Neo4j configuration
     URI = "neo4j://127.0.0.1:7687"
     AUTH = ("neo4j", "admin123")
     DATABASE = "10016742"
 
-    # File paths - dynamically constructed
-    ADMISSIONS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\admissions.csv"
-    TRANSFERS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\transfers.csv"
-    SERVICES_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\services.csv"
-    EDSTAYS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\edstays.csv"
+    # File paths
+    ADMISSIONS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\hosp\admissions.csv"
+    TRANSFERS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\hosp\transfers.csv"
+    SERVICES_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\hosp\services.csv"
+    EDSTAYS_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\ed\edstays.csv"
 
     driver = GraphDatabase.driver(URI, auth=AUTH, database=DATABASE)
 
@@ -205,9 +196,6 @@ def create_patient_flow():
                 session.run(query_total_adm, subject_id=int(subject_id), total_admissions=total_admissions)
 
                 patient_transfers = transfers_df[transfers_df["subject_id"] == subject_id]
-
-                last_discharge_id = None
-                last_discharge_time = None
 
                 for seq_num, adm_row in patient_admissions_sorted.iterrows():
                     hadm_id = adm_row["hadm_id"]
@@ -284,20 +272,43 @@ def create_patient_flow():
                                 hospital_expire_flag=adm_row.get("hospital_expire_flag"),
                                 seq_num=seq_num + 1)  # sequence starts at 1
 
-                    # Link previous discharge → current admission with gap
-                    if last_discharge_id:
-                        gap = calculate_gap(last_discharge_time, adm_intime)
-                        query_gap = """
-                        MATCH (d:Discharge {event_id: $discharge_id})
-                        MATCH (h:HospitalAdmission {hadm_id: $hadm_id})
-                        MERGE (d)-[r:WAS_FOLLOWED_BY_ADMISSION]->(h)
-                        ON CREATE SET r.gap = $gap
-                        ON MATCH SET r.gap = $gap
-                        """
-                        session.run(query_gap,
-                                    discharge_id=last_discharge_id,
-                                    hadm_id=hadm_id,
-                                    gap=gap)
+                    # Link EmergencyDepartment to HospitalAdmission based on timing
+                    # Check if this admission has ED registration time (meaning it came through ED)
+                    if pd.notna(edregtime) and pd.notna(edouttime):
+                        edregtime_dt = pd.to_datetime(edregtime)
+                        edouttime_dt = pd.to_datetime(edouttime)
+                        
+                        # Find the ED visit for this admission
+                        # ED visits have hadm_id that links to hospital admission
+                        patient_ed = edstays_df[
+                            (edstays_df["subject_id"] == subject_id) &
+                            (edstays_df["hadm_id"] == hadm_id)
+                        ]
+                        
+                        if not patient_ed.empty:
+                            ed_stay_id = str(patient_ed.iloc[0]["stay_id"])
+                            
+                            # Determine relationship based on timing
+                            if adm_intime >= edregtime_dt and adm_intime <= edouttime_dt:
+                                # Admission happened DURING ED stay
+                                relationship = "LED_TO_ADMISSION_DURING_STAY"
+                                logger.info(f"Admission {hadm_id} occurred during ED stay {ed_stay_id}")
+                            elif adm_intime > edouttime_dt:
+                                # Admission happened AFTER ED discharge
+                                relationship = "LED_TO_ADMISSION_AFTER_DISCHARGE"
+                                logger.info(f"Admission {hadm_id} occurred after ED discharge from {ed_stay_id}")
+                            else:
+                                # Edge case: admission before ED out (shouldn't normally happen)
+                                relationship = "LED_TO_ADMISSION"
+                                logger.warning(f"Unusual timing: Admission {hadm_id} before ED out for {ed_stay_id}")
+                            
+                            # Create the relationship between ED and HospitalAdmission
+                            query_ed_to_admission = f"""
+                            MATCH (ed:EmergencyDepartment {{event_id: $ed_stay_id}})
+                            MATCH (h:HospitalAdmission {{hadm_id: $hadm_id}})
+                            MERGE (ed)-[:{relationship}]->(h)
+                            """
+                            session.run(query_ed_to_admission, ed_stay_id=ed_stay_id, hadm_id=hadm_id)
 
                     # Handle transfers (unchanged from your code)
                     admission_transfers = patient_transfers[patient_transfers["hadm_id"] == hadm_id]
@@ -305,8 +316,6 @@ def create_patient_flow():
 
                     previous_event_id = None
                     previous_event_type = None
-                    first_event_id = None
-                    first_event_type = None
 
                     for _, row in admission_transfers.iterrows():
                         event_id = str(int(row["transfer_id"]))
@@ -362,10 +371,6 @@ def create_patient_flow():
                                     period=period,
                                     service_given=service_given)
 
-                        if first_event_id is None:
-                            first_event_id = event_id
-                            first_event_type = event_type
-
                         if previous_event_id:
                             rel_next = event_relationship(previous_event_type, event_type)
                             query_flow = f"""
@@ -377,22 +382,55 @@ def create_patient_flow():
                                         prev_id=previous_event_id,
                                         curr_id=event_id)
 
-                        if event_type == "discharge":
-                            last_discharge_id = event_id
-                            last_discharge_time = intime
-
                         previous_event_id = event_id
                         previous_event_type = event_type
 
-                    if first_event_id:
-                        query_link = """
-                        MATCH (h:HospitalAdmission {hadm_id: $hadm_id})
-                        MATCH (first_unit {event_id: $first_event_id})
-                        MERGE (h)-[:BEGAN_WITH_UNIT_ADMISSION]->(first_unit)
-                        """
-                        session.run(query_link, hadm_id=hadm_id, first_event_id=first_event_id)
-
                     logger.info(f"Processed hospital admission {hadm_id} (Seq {seq_num+1}) for subject {subject_id}")
+
+                # Link Discharge events to subsequent ED visits with gap calculation
+                # Get all discharge events for this subject
+                query_discharges = """
+                MATCH (d:Discharge {subject_id: $subject_id})
+                WHERE d.intime IS NOT NULL
+                RETURN d.event_id AS discharge_id, d.intime AS discharge_time
+                ORDER BY d.intime
+                """
+                discharges = session.run(query_discharges, subject_id=int(subject_id))
+                discharge_list = list(discharges)
+                
+                # Get all ED visits for this subject with their times
+                patient_ed_stays = edstays_df[edstays_df["subject_id"] == subject_id].sort_values(by="intime")
+                
+                for discharge_record in discharge_list:
+                    discharge_id = discharge_record["discharge_id"]
+                    discharge_time = pd.to_datetime(discharge_record["discharge_time"])
+                    
+                    # Find the next ED visit after this discharge
+                    subsequent_eds = patient_ed_stays[patient_ed_stays["intime"] > discharge_time]
+                    
+                    if not subsequent_eds.empty:
+                        # Get the first ED visit after the discharge
+                        next_ed = subsequent_eds.iloc[0]
+                        next_ed_stay_id = str(next_ed["stay_id"])
+                        next_ed_time = next_ed["intime"]
+                        
+                        # Calculate gap between discharge and ED visit
+                        gap = calculate_gap(discharge_time, next_ed_time)
+                        
+                        # Create relationship from Discharge to EmergencyDepartment
+                        query_discharge_to_ed = """
+                        MATCH (d:Discharge {event_id: $discharge_id})
+                        MATCH (ed:EmergencyDepartment {event_id: $ed_stay_id})
+                        MERGE (d)-[r:LED_TO_ED_VISIT]->(ed)
+                        ON CREATE SET r.gap = $gap
+                        ON MATCH SET r.gap = $gap
+                        """
+                        session.run(query_discharge_to_ed, 
+                                  discharge_id=discharge_id, 
+                                  ed_stay_id=next_ed_stay_id,
+                                  gap=gap)
+                        
+                        logger.info(f"Linked Discharge {discharge_id} to ED {next_ed_stay_id} with gap: {gap}")
 
         logger.info("Patient flows with hospital admits, inter-admission links, sequence numbers, and total counts created successfully!")
 

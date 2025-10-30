@@ -20,18 +20,6 @@ for handler in logging.root.handlers:
         handler.stream.reconfigure(encoding='utf-8')
 logger = logging.getLogger(__name__)
 
-def get_folder_name():
-    """Read folder name from foldername.txt"""
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        foldername_path = os.path.join(script_dir, 'foldername.txt')
-        with open(foldername_path, 'r') as f:
-            folder_name = f.read().strip()
-        logger.info(f"Using folder name: {folder_name}")
-        return folder_name
-    except Exception as e:
-        logger.error(f"Error reading folder name: {e}")
-        raise
 
 def parse_vitals(vitals_string):
     """
@@ -83,7 +71,7 @@ def parse_medications(medications_string):
     return medications
 
 def create_hospital_admission_node(session, row):
-    """Create HospitalAdmission node and link to Patient"""
+    """Update HospitalAdmission node with clinical note data"""
     subject_id = int(row['subject_id'])
     hadm_id = int(row['hadm_id'])
     
@@ -98,29 +86,19 @@ def create_hospital_admission_node(session, row):
     }
     
     query = """
-    MATCH (p:Patient {subject_id: $subject_id})
-    MERGE (ha:HospitalAdmission {hadm_id: $hadm_id})
-    ON CREATE SET 
-        ha.subject_id = $subject_id,
+    MATCH (ha:HospitalAdmission {hadm_id: $hadm_id})
+    SET ha.subject_id = $subject_id,
         ha.note_id = $note_id,
         ha.service = $service,
         ha.chief_complaint = $chief_complaint,
         ha.social_history = $social_history,
         ha.family_history = $family_history
-    ON MATCH SET
-        ha.subject_id = $subject_id,
-        ha.note_id = $note_id,
-        ha.service = $service,
-        ha.chief_complaint = $chief_complaint,
-        ha.social_history = $social_history,
-        ha.family_history = $family_history
-    MERGE (p)-[:UNDERWENT_ADMISSION]->(ha)
-    RETURN p IS NOT NULL as patient_exists
+    RETURN ha IS NOT NULL as admission_exists
     """
     
     result = session.run(query, **properties)
     record = result.single()
-    return record and record['patient_exists']
+    return record and record['admission_exists']
 
 def create_admission_vitals_node(session, row):
     """Create AdmissionVitals node and link to HospitalAdmission"""
@@ -508,16 +486,13 @@ def create_medications_to_avoid_node(session, row):
 
 def add_hospitalization_data():
     """Main function to add all hospitalization data to Neo4j"""
-    # Get dynamic folder name
-    folder_name = get_folder_name()
-    
     # Neo4j configuration
     URI = "neo4j://127.0.0.1:7687"
     AUTH = ("neo4j", "admin123")
     DATABASE = "10016742"
 
     # File path
-    CLINICAL_NOTES_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\{folder_name}\discharge_clinical_note_flattened.csv"
+    CLINICAL_NOTES_CSV = rf"C:\Users\Coditas\Desktop\Projects\CKG\Phase1\Filtered_Data\note\discharge_clinical_note_flattened.csv"
 
     driver = GraphDatabase.driver(URI, auth=AUTH, database=DATABASE)
 
