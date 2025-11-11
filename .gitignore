@@ -3,6 +3,8 @@ Filtered_Data/
 Complete_Data/
 bin/
 checkpoints/
+Patient_Reports/
+volumnes/
 
 # Python
 __pycache__/

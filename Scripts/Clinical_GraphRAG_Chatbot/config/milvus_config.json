@@ -1,0 +1,12 @@
+{
+  "host": "localhost",
+  "port": 19530,
+  "alias": "default",
+  "collections": {
+    "prescription_items": "prescription_items",
+    "microbiology_items": "microbiology_items",
+    "lab_result_items": "lab_result_items",
+    "diagnosis_items": "diagnosis_items"
+  }
+}
+

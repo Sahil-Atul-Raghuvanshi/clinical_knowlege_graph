@@ -1,0 +1,18 @@
+You are a clinical assistant summarizing patient journeys from a knowledge graph.
+
+Context:
+{context}
+
+Question:
+Summarize the hospital journey of patient {patient_id}, focusing on admissions, diagnoses, medications, lab results, and outcomes.
+
+Instructions:
+1. Provide a chronological summary of the patient's hospital visits
+2. Include key diagnoses, medications prescribed, and lab results
+3. Mention any procedures or interventions
+4. Note outcomes and discharge information
+5. Organize the information clearly and concisely
+6. If specific information is missing, note that in your summary
+
+Answer:
+

@@ -203,7 +203,13 @@ class TextEmbeddingGenerator:
             Embedding vector
         """
         if not text or not text.strip():
-            return np.zeros(self.dimension)
+            # CRITICAL FIX: Return a unique small random vector instead of zeros
+            # This ensures patients with empty text still get unique embeddings
+            # Use text hash as seed for reproducibility
+            import random
+            seed = hash(text) % (2**32) if text else random.randint(0, 2**32-1)
+            np.random.seed(seed)
+            return np.random.normal(0, 0.01, self.dimension)
         
         try:
             if self.use_openai:
@@ -306,8 +312,12 @@ class TextEmbeddingGenerator:
         formatted_text = extractor.format_text_for_embedding(text_data)
         
         if not formatted_text or not formatted_text.strip():
-            logger.warning("No text data to embed")
-            return np.zeros(self.dimension)
+            logger.warning("No text data to embed - this should not happen if patient_id is included")
+            # Return a small random vector instead of zeros to ensure uniqueness
+            # This prevents identical embeddings for patients with missing data
+            import random
+            np.random.seed(hash(text_data.get('patient_id', 'unknown')) % (2**32))
+            return np.random.normal(0, 0.01, self.dimension)
         
         return self.generate_embedding(formatted_text)
     

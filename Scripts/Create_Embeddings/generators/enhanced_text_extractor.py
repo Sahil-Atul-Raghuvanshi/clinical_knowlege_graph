@@ -438,14 +438,25 @@ class EnhancedTextExtractor:
         # Remove empty categories
         category_parts = {k: v for k, v in category_parts.items() if v}
         
+        # CRITICAL FIX: Always include patient_id to ensure unique embeddings
+        # This prevents identical embeddings for patients with similar/empty data
+        patient_id = text_data.get('patient_id', '')
+        patient_id_prefix = f"Patient ID: {patient_id}" if patient_id else ""
+        
         # Build text by priority order (for better organization, not truncation)
         # Sort categories by priority (lower number = higher priority)
         sorted_categories = sorted(category_parts.items(), 
                                   key=lambda x: category_priority.get(x[0], 5))
         
-        # Join all parts in priority order
+        # Join all parts in priority order, with patient_id first
         text_parts = [text for _, text in sorted_categories]
+        if patient_id_prefix:
+            text_parts.insert(0, patient_id_prefix)  # Add patient_id at the beginning
         full_text = " | ".join(text_parts)
+        
+        # If text is still empty (shouldn't happen with patient_id), add a fallback
+        if not full_text or not full_text.strip():
+            full_text = f"Patient ID: {patient_id}" if patient_id else "Empty patient data"
         
         # Apply truncation only if explicitly enabled
         if enable_truncation:
