@@ -3,6 +3,9 @@ import pandas as pd
 from neo4j import GraphDatabase
 import logging
 import os
+from typing import Optional
+from incremental_load_utils import IncrementalLoadChecker
+from etl_tracker import ETLTracker
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -128,11 +131,12 @@ def process_ed_stays(session, edstays_df, transfers_df, subject_id):
         else:
             logger.info(f"Processed ED visit {stay_id} (Seq {seq_num}) with hospital admission {hadm_id} for subject {subject_id}")
 
-def create_patient_flow():
+def create_patient_flow(tracker: Optional[ETLTracker] = None):
     # Neo4j configuration
     URI = "neo4j://127.0.0.1:7687"
     AUTH = ("neo4j", "admin123")
     DATABASE = "clinicalknowledgegraph"
+    SCRIPT_NAME = '2_patient_flow_through_the_hospital'
 
     # File paths (relative to script location)
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -202,7 +206,33 @@ def create_patient_flow():
                 edstays_df["subject_id"]
             ]).unique()
 
+            # Check for existing patients with complete graphs (incremental load support)
+            checker = IncrementalLoadChecker(driver, tracker=tracker)
+            skipped_count = 0
+            processed_count = 0
+            processed_patients = []
+            patients_with_complete_graphs = set()  # Track all patients with complete graphs for batch sync
+            
             for subject_id in all_subjects:
+                subject_id_int = int(subject_id)
+                
+                # Check tracker first (faster than database query)
+                if tracker and tracker.is_patient_processed(subject_id_int, SCRIPT_NAME):
+                    skipped_count += 1
+                    if skipped_count == 1 or skipped_count % 100 == 0:
+                        logger.info(f"Skipping patient {subject_id} - already processed (tracker). Total skipped: {skipped_count}")
+                    continue
+                
+                # Skip if patient already has complete graph
+                if checker.patient_has_complete_graph(subject_id_int):
+                    skipped_count += 1
+                    patients_with_complete_graphs.add(subject_id_int)
+                    if skipped_count == 1 or skipped_count % 100 == 0:
+                        logger.info(f"Skipping patient {subject_id} - already has complete graph (incremental load). Total skipped: {skipped_count}")
+                    continue
+                
+                processed_count += 1
+                processed_patients.append(subject_id_int)
                 # Process ED stays first (both standalone and admission-linked)
                 process_ed_stays(session, edstays_df, transfers_df, subject_id)
 
@@ -453,9 +483,156 @@ def create_patient_flow():
                         previous_event_id = event_id
                         previous_event_type = event_type
 
-                    # Create Patient→ED relationships for ED events from transfers
-                    # Skip ED events that were already processed from edstays.csv
-                    # Use case-insensitive comparison for eventtype
+                    # ====================================================================
+                    # CRITICAL: Find the first event and connect Patient and HospitalAdmission
+                    # ====================================================================
+                    # The first event may be ED, admit, or transfer - not always ED!
+                    # We need to:
+                    # 1. Find the chronologically first event (ED, admit, or transfer)
+                    # 2. Connect Patient to the first event
+                    # 3. Connect HospitalAdmission to the first unit admission if timing allows
+                    
+                    # Collect all possible first events (ED from edstays, ED from transfers, admit, transfer)
+                    first_events = []
+                    
+                    # 1. Check ED from edstays.csv for this admission
+                    patient_ed = edstays_df[
+                        (edstays_df["subject_id"] == subject_id) &
+                        (edstays_df["hadm_id"] == hadm_id) &
+                        (edstays_df["hadm_id"].notna())
+                    ]
+                    for _, ed_row in patient_ed.iterrows():
+                        if pd.notna(ed_row["intime"]):
+                            first_events.append({
+                                'event_id': str(ed_row["stay_id"]),
+                                'event_type': 'ed',
+                                'label': 'EmergencyDepartment',
+                                'intime': ed_row["intime"],
+                                'outtime': ed_row["outtime"],
+                                'source': 'edstays'
+                            })
+                    
+                    # 2. Check ED from transfers.csv for this admission
+                    ed_transfers = admission_transfers[admission_transfers["eventtype"].str.lower() == "ed"]
+                    for _, ed_transfer in ed_transfers.iterrows():
+                        ed_event_id = str(int(ed_transfer["transfer_id"]))
+                        # Skip if already processed from edstays.csv
+                        if ed_event_id in patient_edstays_ids:
+                            continue
+                        if pd.notna(ed_transfer["intime"]):
+                            first_events.append({
+                                'event_id': ed_event_id,
+                                'event_type': 'ed',
+                                'label': 'EmergencyDepartment',
+                                'intime': ed_transfer["intime"],
+                                'outtime': ed_transfer["outtime"],
+                                'source': 'transfers'
+                            })
+                    
+                    # 3. Check admit and transfer events (UnitAdmissions)
+                    unit_admissions = admission_transfers[
+                        admission_transfers["eventtype"].str.lower().isin(["admit", "transfer"])
+                    ]
+                    for _, unit_row in unit_admissions.iterrows():
+                        if pd.notna(unit_row["intime"]):
+                            first_events.append({
+                                'event_id': str(int(unit_row["transfer_id"])),
+                                'event_type': unit_row["eventtype"].lower(),
+                                'label': 'UnitAdmission',
+                                'intime': unit_row["intime"],
+                                'outtime': unit_row["outtime"],
+                                'source': 'transfers'
+                            })
+                    
+                    # Sort all events by intime to find the first one
+                    if first_events:
+                        first_events_df = pd.DataFrame(first_events)
+                        first_events_df = first_events_df.sort_values(by="intime").reset_index(drop=True)
+                        first_event = first_events_df.iloc[0]
+                        first_event_id = first_event["event_id"]
+                        first_event_type = first_event["event_type"]
+                        first_event_label = first_event["label"]
+                        first_event_intime = first_event["intime"]
+                        first_event_outtime = first_event["outtime"]
+                        
+                        logger.info(f"First event for admission {hadm_id}: {first_event_type} (event_id: {first_event_id}, intime: {first_event_intime})")
+                        
+                        # Connect Patient to the first event
+                        if first_event_type == "ed":
+                            # Connect Patient to ED
+                            query_patient_first = """
+                            MATCH (p:Patient {subject_id: $subject_id})
+                            MATCH (e:EmergencyDepartment {event_id: $event_id})
+                            MERGE (p)-[:VISITED_ED]->(e)
+                            """
+                            session.run(query_patient_first, subject_id=int(subject_id), event_id=first_event_id)
+                            logger.info(f"Connected Patient {subject_id} to first event: ED {first_event_id}")
+                        elif first_event_type in ["admit", "transfer"]:
+                            # Connect Patient to UnitAdmission
+                            query_patient_first = """
+                            MATCH (p:Patient {subject_id: $subject_id})
+                            MATCH (e:UnitAdmission {event_id: $event_id})
+                            MERGE (p)-[:ADMITTED_TO_UNIT]->(e)
+                            """
+                            session.run(query_patient_first, subject_id=int(subject_id), event_id=first_event_id)
+                            logger.info(f"Connected Patient {subject_id} to first event: UnitAdmission {first_event_id}")
+                        
+                        # Connect HospitalAdmission to the first unit admission (if first event is a unit admission)
+                        # OR connect ED to HospitalAdmission if first event is ED
+                        if first_event_type in ["admit", "transfer"]:
+                            # First event is a unit admission
+                            # Check if hospital admission time is within or before the first unit admission's time range
+                            if pd.notna(adm_intime) and pd.notna(first_event_intime):
+                                # Determine relationship based on timing
+                                if adm_intime <= first_event_intime:
+                                    # Hospital admission happened before or at the same time as first unit admission
+                                    relationship = "LED_TO_FIRST_UNIT_ADMISSION"
+                                    logger.info(f"Hospital admission {hadm_id} (time: {adm_intime}) led to first unit admission {first_event_id} (time: {first_event_intime})")
+                                elif pd.notna(first_event_outtime) and adm_intime <= first_event_outtime:
+                                    # Hospital admission happened during the first unit admission
+                                    relationship = "LED_TO_FIRST_UNIT_ADMISSION"
+                                    logger.info(f"Hospital admission {hadm_id} (time: {adm_intime}) occurred during first unit admission {first_event_id} (time: {first_event_intime} to {first_event_outtime})")
+                                else:
+                                    # Hospital admission happened after first unit admission (unusual but possible)
+                                    relationship = "LED_TO_FIRST_UNIT_ADMISSION"
+                                    logger.warning(f"Hospital admission {hadm_id} (time: {adm_intime}) occurred after first unit admission {first_event_id} (time: {first_event_intime})")
+                                
+                                query_hosp_to_unit = f"""
+                                MATCH (h:HospitalAdmission {{hadm_id: $hadm_id}})
+                                MATCH (u:UnitAdmission {{event_id: $event_id}})
+                                MERGE (h)-[:{relationship}]->(u)
+                                """
+                                session.run(query_hosp_to_unit, hadm_id=hadm_id, event_id=first_event_id)
+                                logger.info(f"Connected HospitalAdmission {hadm_id} to first UnitAdmission {first_event_id}")
+                        elif first_event_type == "ed":
+                            # First event is ED - connect ED to HospitalAdmission
+                            if pd.notna(adm_intime) and pd.notna(first_event_intime):
+                                if pd.notna(first_event_outtime):
+                                    if adm_intime >= first_event_intime and adm_intime <= first_event_outtime:
+                                        relationship = "LED_TO_ADMISSION_DURING_STAY"
+                                        logger.info(f"Admission {hadm_id} occurred during ED stay {first_event_id}")
+                                    elif adm_intime > first_event_outtime:
+                                        relationship = "LED_TO_ADMISSION_AFTER_DISCHARGE"
+                                        logger.info(f"Admission {hadm_id} occurred after ED discharge from {first_event_id}")
+                                    else:
+                                        relationship = "LED_TO_ADMISSION"
+                                        logger.info(f"Admission {hadm_id} has unusual timing with ED {first_event_id}")
+                                else:
+                                    relationship = "LED_TO_ADMISSION"
+                                    logger.info(f"Admission {hadm_id} linked to ED {first_event_id} (no outtime for ED)")
+                                
+                                query_ed_to_admission = f"""
+                                MATCH (ed:EmergencyDepartment {{event_id: $ed_event_id}})
+                                MATCH (h:HospitalAdmission {{hadm_id: $hadm_id}})
+                                MERGE (ed)-[:{relationship}]->(h)
+                                """
+                                session.run(query_ed_to_admission, ed_event_id=first_event_id, hadm_id=hadm_id)
+                                logger.info(f"Connected ED {first_event_id} to HospitalAdmission {hadm_id}")
+                    else:
+                        logger.warning(f"No events found for admission {hadm_id} - cannot determine first event")
+                    
+                    # Also create Patient→ED relationships for any additional ED events from transfers
+                    # (in case there are multiple ED visits, we still want to link them all)
                     ed_transfers = admission_transfers[admission_transfers["eventtype"].str.lower() == "ed"]
                     for _, ed_transfer in ed_transfers.iterrows():
                         ed_event_id = str(int(ed_transfer["transfer_id"]))
@@ -470,78 +647,78 @@ def create_patient_flow():
                         session.run(query_patient_ed, subject_id=int(subject_id), ed_event_id=ed_event_id)
                         logger.info(f"Linked Patient {subject_id} to ED event {ed_event_id} from transfers")
                     
-                    # Link EmergencyDepartment to HospitalAdmission based on timing
-                    # Process ED from BOTH edstays.csv AND transfers.csv
-                    
-                    # First, try to find ED visit from edstays (more detailed data if available)
-                    patient_ed = edstays_df[
-                        (edstays_df["subject_id"] == subject_id) &
-                        (edstays_df["hadm_id"] == hadm_id) &
-                        (edstays_df["hadm_id"].notna())
-                    ]
-                    
-                    if not patient_ed.empty:
-                        # Found ED data in edstays.csv
-                        ed_stay_id = str(patient_ed.iloc[0]["stay_id"])
-                        ed_intime = patient_ed.iloc[0]["intime"]
-                        ed_outtime = patient_ed.iloc[0]["outtime"]
-                        
-                        logger.info(f"Found ED stay {ed_stay_id} from edstays linked to admission {hadm_id}")
-                        
-                        # Determine relationship based on timing
-                        if pd.notna(ed_intime) and pd.notna(ed_outtime) and pd.notna(adm_intime):
-                            if adm_intime >= ed_intime and adm_intime <= ed_outtime:
-                                relationship = "LED_TO_ADMISSION_DURING_STAY"
-                                logger.info(f"Admission {hadm_id} occurred during ED stay {ed_stay_id}")
-                            elif adm_intime > ed_outtime:
-                                relationship = "LED_TO_ADMISSION_AFTER_DISCHARGE"
-                                logger.info(f"Admission {hadm_id} occurred after ED discharge from {ed_stay_id}")
-                            else:
-                                relationship = "LED_TO_ADMISSION"
-                                logger.warning(f"Unusual timing: Admission {hadm_id} before ED out for {ed_stay_id}")
-                            
-                            # Create the relationship between ED and HospitalAdmission
-                            query_ed_to_admission = f"""
-                            MATCH (ed:EmergencyDepartment {{event_id: $ed_stay_id}})
-                            MATCH (h:HospitalAdmission {{hadm_id: $hadm_id}})
-                            MERGE (ed)-[:{relationship}]->(h)
-                            """
-                            session.run(query_ed_to_admission, ed_stay_id=ed_stay_id, hadm_id=hadm_id)
-                    
-                    # Now process ED from transfers (only for ED visits NOT in edstays.csv)
-                    # This ensures connections even when edstays.csv is empty
-                    if not ed_transfers.empty:
-                        # Filter out ED events that were already processed from edstays.csv
-                        new_ed_transfers = ed_transfers[~ed_transfers["transfer_id"].astype(str).isin(patient_edstays_ids)]
-                        if not new_ed_transfers.empty:
-                            logger.info(f"Processing {len(new_ed_transfers)} NEW ED event(s) from transfers for admission {hadm_id}")
-                            for _, ed_transfer in new_ed_transfers.iterrows():
-                                ed_event_id = str(int(ed_transfer["transfer_id"]))
-                                ed_intime = ed_transfer["intime"]
-                                ed_outtime = ed_transfer["outtime"]
-                                
-                                # Determine relationship based on timing
-                                if pd.notna(ed_intime) and pd.notna(ed_outtime) and pd.notna(adm_intime):
-                                    if adm_intime >= ed_intime and adm_intime <= ed_outtime:
-                                        relationship = "LED_TO_ADMISSION_DURING_STAY"
-                                        logger.info(f"Admission {hadm_id} occurred during ED event {ed_event_id}")
-                                    elif adm_intime > ed_outtime:
-                                        relationship = "LED_TO_ADMISSION_AFTER_DISCHARGE"
-                                        logger.info(f"Admission {hadm_id} occurred after ED event {ed_event_id}")
-                                    else:
-                                        relationship = "LED_TO_ADMISSION"
-                                        logger.info(f"Admission {hadm_id} has unusual timing with ED event {ed_event_id}")
-                                    
-                                    # Create the relationship between ED (from transfers) and HospitalAdmission
-                                    query_ed_to_admission = f"""
-                                    MATCH (ed:EmergencyDepartment {{event_id: $ed_event_id}})
-                                    MATCH (h:HospitalAdmission {{hadm_id: $hadm_id}})
-                                    MERGE (ed)-[:{relationship}]->(h)
-                                    """
-                                    session.run(query_ed_to_admission, ed_event_id=ed_event_id, hadm_id=hadm_id)
-                                    logger.info(f"Created {relationship} from ED {ed_event_id} to admission {hadm_id}")
-                    
                     logger.info(f"Processed hospital admission {hadm_id} (Seq {adm_seq_num}) for subject {subject_id}")
+
+                # Handle standalone ED visits (without hadm_id) from transfers.csv
+                # These are ED visits that don't belong to any hospital admission
+                standalone_ed_transfers = patient_transfers[
+                    (patient_transfers["eventtype"].str.lower() == "ed") &
+                    (patient_transfers["hadm_id"].isna())
+                ]
+                for _, ed_transfer in standalone_ed_transfers.iterrows():
+                    ed_event_id = str(int(ed_transfer["transfer_id"]))
+                    # Skip if already processed from edstays.csv
+                    if ed_event_id in patient_edstays_ids:
+                        continue
+                    
+                    # Create ED node if it doesn't exist (it should have been created in the loop above)
+                    # But we need to make sure it exists and is connected to Patient
+                    intime = ed_transfer["intime"]
+                    outtime = ed_transfer["outtime"]
+                    intime_str = intime.strftime("%Y-%m-%d %H:%M:%S") if pd.notna(intime) else None
+                    outtime_str = outtime.strftime("%Y-%m-%d %H:%M:%S") if pd.notna(outtime) else None
+                    period = human_readable_period(intime, outtime)
+                    careunit = ed_transfer["careunit"] if pd.notna(ed_transfer["careunit"]) else "Emergency Department"
+                    
+                    # Get pre-assigned sequence number from map
+                    ed_seq_num = ed_transfer_seq_map.get(ed_event_id, None)
+                    
+                    # Create or update ED node
+                    query_standalone_ed = """
+                    MERGE (e:EmergencyDepartment {event_id: $event_id})
+                    ON CREATE SET 
+                        e.name = $name_value,
+                        e.subject_id = $subject_id,
+                        e.hadm_id = NULL,
+                        e.transfer_id = $transfer_id,
+                        e.eventtype = $eventtype,
+                        e.careunit = $careunit,
+                        e.intime = $intime,
+                        e.outtime = $outtime,
+                        e.period = $period,
+                        e.ed_seq_num = $ed_seq_num
+                    ON MATCH SET
+                        e.name = $name_value,
+                        e.subject_id = $subject_id,
+                        e.hadm_id = NULL,
+                        e.transfer_id = $transfer_id,
+                        e.eventtype = $eventtype,
+                        e.careunit = $careunit,
+                        e.intime = $intime,
+                        e.outtime = $outtime,
+                        e.period = $period,
+                        e.ed_seq_num = $ed_seq_num
+                    """
+                    session.run(query_standalone_ed,
+                                event_id=ed_event_id,
+                                name_value=careunit,
+                                subject_id=int(subject_id),
+                                transfer_id=int(ed_transfer["transfer_id"]),
+                                eventtype="ed",
+                                careunit=careunit,
+                                intime=intime_str,
+                                outtime=outtime_str,
+                                period=period,
+                                ed_seq_num=ed_seq_num)
+                    
+                    # Connect Patient to standalone ED
+                    query_patient_standalone_ed = """
+                    MATCH (p:Patient {subject_id: $subject_id})
+                    MATCH (ed:EmergencyDepartment {event_id: $ed_event_id})
+                    MERGE (p)-[:VISITED_ED]->(ed)
+                    """
+                    session.run(query_patient_standalone_ed, subject_id=int(subject_id), ed_event_id=ed_event_id)
+                    logger.info(f"Connected Patient {subject_id} to standalone ED visit {ed_event_id}")
 
                 # Link Discharge events to subsequent ED visits with gap calculation
                 # Get all discharge events for this subject
@@ -616,6 +793,21 @@ def create_patient_flow():
                 else:
                     logger.info(f"No ED visits found for subject {subject_id} to link with discharges")
 
+        # Mark processed patients in tracker
+        # Note: This marks success for THIS script only, not the entire pipeline.
+        # If a later script fails, this mark remains so we can skip this step on retry.
+        if tracker and processed_patients:
+            tracker.mark_patients_processed_batch(processed_patients, SCRIPT_NAME, status='success')
+            logger.info(f"Marked {len(processed_patients)} patients as processed in tracker for script '{SCRIPT_NAME}' (incremental load: will skip this step on next run)")
+        
+        # Sync tracker: Mark all patients with complete graphs as processed (even if they were skipped)
+        if tracker and patients_with_complete_graphs:
+            checker.sync_tracker_for_existing_patients(SCRIPT_NAME, patients_with_complete_graphs)
+        
+        # Log summary if incremental load was used
+        if skipped_count > 0:
+            logger.info(f"Incremental load summary: Processed {processed_count} patients, skipped {skipped_count} patients with existing graphs")
+        
         logger.info("Patient flows with hospital admits, ED visits (from edstays.csv and/or transfers.csv), inter-admission links, sequence numbers, and total counts created successfully!")
 
     except Exception as e:

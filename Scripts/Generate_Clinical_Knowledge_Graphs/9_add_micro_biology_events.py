@@ -2,16 +2,20 @@ import pandas as pd
 from neo4j import GraphDatabase
 import logging
 import os
+from typing import Optional
+from incremental_load_utils import IncrementalLoadChecker
+from etl_tracker import ETLTracker
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-def create_microbiology_nodes():
+def create_microbiology_nodes(tracker: Optional[ETLTracker] = None):
     # Neo4j configuration
     URI = "neo4j://127.0.0.1:7687"
     AUTH = ("neo4j", "admin123")
     DATABASE = "clinicalknowledgegraph"
+    SCRIPT_NAME = '9_add_micro_biology_events'
 
     driver = GraphDatabase.driver(URI, auth=AUTH, database=DATABASE)
 
@@ -194,6 +198,19 @@ def create_microbiology_nodes():
             else:
                 logger.info("No cross-connections found.")
             
+            # Check for existing microbiology events (incremental load support)
+            checker = IncrementalLoadChecker(driver, tracker=tracker)
+            events_with_microbiology = set()
+            
+            # Get events that already have MicrobiologyEvent nodes
+            query_existing = """
+            MATCH (le:LabEvents)-[:CONTAINED_MICROBIOLOGY_EVENT]->(me:MicrobiologyEvent)
+            RETURN DISTINCT le.event_id AS event_id
+            """
+            result = session.run(query_existing)
+            events_with_microbiology = {str(record["event_id"]) for record in result if record["event_id"] is not None}
+            logger.info(f"Found {len(events_with_microbiology)} events with existing microbiology events")
+            
             # Fetch events with intime/outtime
             query_events = """
             MATCH (e)
@@ -202,6 +219,13 @@ def create_microbiology_nodes():
                    e.intime AS intime, e.outtime AS outtime
             """
             events = session.run(query_events)
+            
+            skipped_count = 0
+            processed_count = 0
+            
+            # Track processed patients for this script (per-patient, per-script tracking)
+            processed_patients = set()
+            skipped_patients = set()
 
             for record in events:
                 event_id = str(record["event_id"]).strip() if record["event_id"] is not None else None
@@ -221,6 +245,25 @@ def create_microbiology_nodes():
                 except ValueError:
                     logger.warning(f"Skipping event with invalid ID format: subject_id={subject_id}, hadm_id={hadm_id}")
                     continue
+                
+                # Check per-patient, per-script tracking first
+                if tracker and tracker.is_patient_processed(subject_id_int, SCRIPT_NAME):
+                    skipped_patients.add(subject_id_int)
+                    # Still check event-level to avoid duplicate work
+                    if event_id in events_with_microbiology:
+                        skipped_count += 1
+                        if skipped_count == 1 or skipped_count % 100 == 0:
+                            logger.info(f"Skipping event {event_id} (patient {subject_id_int} already processed by {SCRIPT_NAME}). Total skipped: {skipped_count}")
+                        continue
+                
+                # Skip if event already has microbiology events (incremental load)
+                if event_id in events_with_microbiology:
+                    skipped_count += 1
+                    if skipped_count == 1 or skipped_count % 100 == 0:
+                        logger.info(f"Skipping event {event_id} - already has microbiology events (incremental load). Total skipped: {skipped_count}")
+                    continue
+                
+                processed_count += 1
                 
                 intime = pd.to_datetime(record["intime"])
                 outtime = pd.to_datetime(record["outtime"])
@@ -388,6 +431,21 @@ def create_microbiology_nodes():
                     microevent_counter += 1
                 
                 logger.info(f"Added {len(microevents_for_event)} microbiology events for event {event_id}")
+                
+                # Track patient as processed
+                processed_patients.add(subject_id_int)
+            
+            # Mark processed patients in tracker (per-patient, per-script tracking)
+            if tracker and processed_patients:
+                tracker.mark_patients_processed_batch(list(processed_patients), SCRIPT_NAME, status='success')
+                logger.info(f"Marked {len(processed_patients)} patients as processed in tracker for script '{SCRIPT_NAME}' (incremental load: will skip these patients on next run)")
+            
+            if skipped_patients:
+                logger.info(f"Skipped {len(skipped_patients)} patients that were already processed by {SCRIPT_NAME} (tracker)")
+            
+            # Log incremental load summary
+            if skipped_count > 0:
+                logger.info(f"Incremental load summary: Processed {processed_count} events, skipped {skipped_count} events with existing microbiology events")
 
         logger.info("All microbiology events processed successfully!")
 

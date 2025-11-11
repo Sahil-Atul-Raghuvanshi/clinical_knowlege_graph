@@ -3,16 +3,20 @@ import pandas as pd
 from neo4j import GraphDatabase
 import logging
 import os
+from typing import Optional
+from incremental_load_utils import IncrementalLoadChecker
+from etl_tracker import ETLTracker
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-def create_chart_event_nodes():
+def create_chart_event_nodes(tracker: Optional[ETLTracker] = None):
     # Neo4j configuration
     URI = "neo4j://127.0.0.1:7687"
     AUTH = ("neo4j", "admin123")
     DATABASE = "clinicalknowledgegraph"
+    SCRIPT_NAME = '50_add_chart_events'
 
     driver = GraphDatabase.driver(URI, auth=AUTH, database=DATABASE)
 
@@ -60,20 +64,31 @@ def create_chart_event_nodes():
 
     try:
         with driver.session() as session:
-            # Delete any existing chart event nodes and relationships
-            logger.info("Cleaning up existing chart event nodes...")
+            # Check for existing chart events (incremental load support)
+            checker = IncrementalLoadChecker(driver, tracker=tracker)
+            icustays_with_chart_events = set()
             
-            cleanup_query = """
-            MATCH (ceb:ChartEventBatch)
-            OPTIONAL MATCH (ceb)-[:HAS_CHART_EVENT]->(ce:ChartEvent)
-            DETACH DELETE ce, ceb
+            # Get ICU stays that already have chart events
+            query_existing = """
+            MATCH (icu:ICUStay)-[:RECORDED_CHART_EVENTS]->(ceb:ChartEventBatch)
+            RETURN DISTINCT icu.event_id AS event_id
             """
-            session.run(cleanup_query)
+            result = session.run(query_existing)
+            icustays_with_chart_events = {str(record["event_id"]) for record in result if record["event_id"] is not None}
+            logger.info(f"Found {len(icustays_with_chart_events)} ICU stays with existing chart events")
             
-            # Also clean up any orphaned ChartEvent nodes
+            # For incremental load: Don't delete existing chart events
+            # We'll skip ICU stays that already have chart events
+            # Only clean up orphaned nodes (nodes without proper relationships)
+            if icustays_with_chart_events:
+                logger.info(f"Found {len(icustays_with_chart_events)} ICU stays with existing chart events - will skip (incremental load)")
+            else:
+                logger.info("No existing chart events found. Starting fresh.")
+            
+            # Clean up any orphaned ChartEvent nodes (nodes without proper batch relationships)
             cleanup_orphans = """
             MATCH (ce:ChartEvent)
-            WHERE NOT EXISTS((ce)<-[:HAS_CHART_EVENT]-(:ChartEventBatch))
+            WHERE NOT EXISTS((ce)<-[:CONTAINED_CHART_EVENT]-(:ChartEventBatch))
             DETACH DELETE ce
             """
             session.run(cleanup_orphans)
@@ -90,6 +105,9 @@ def create_chart_event_nodes():
             """
             icu_stays = session.run(query_icu_stays)
             logger.info("Processing chart events for ICU stays only")
+            
+            skipped_count = 0
+            processed_count = 0
 
             for record in icu_stays:
                 event_id = str(record["event_id"]).strip() if record["event_id"] is not None else None
@@ -98,6 +116,15 @@ def create_chart_event_nodes():
                 
                 if event_id is None or subject_id_raw is None:
                     continue
+                
+                # Skip if ICU stay already has chart events (incremental load)
+                if event_id in icustays_with_chart_events:
+                    skipped_count += 1
+                    if skipped_count == 1 or skipped_count % 50 == 0:
+                        logger.info(f"Skipping ICU stay {event_id} - already has chart events (incremental load). Total skipped: {skipped_count}")
+                    continue
+                
+                processed_count += 1
                 
                 subject_id = str(subject_id_raw).strip()
                 hadm_id = str(hadm_id_raw).strip() if hadm_id_raw is not None else None
@@ -210,6 +237,10 @@ def create_chart_event_nodes():
                     chartevent_counter += 1
                 
                 logger.info(f"Added {len(chartevents_for_stay)} chart events in {chartevent_counter - 1} time groups for ICU stay {event_id}")
+            
+            # Log incremental load summary
+            if skipped_count > 0:
+                logger.info(f"Incremental load summary: Processed {processed_count} ICU stays, skipped {skipped_count} ICU stays with existing chart events")
 
         logger.info("All chart events processed successfully!")
 

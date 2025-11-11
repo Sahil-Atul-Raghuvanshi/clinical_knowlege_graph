@@ -307,7 +307,7 @@ class TextEmbeddingGenerator:
             Text embedding vector
         """
         # Format text data into a single string
-        from ..generators.enhanced_text_extractor import EnhancedTextExtractor
+        from generators.enhanced_text_extractor import EnhancedTextExtractor
         extractor = EnhancedTextExtractor(None)  # We only need the formatter
         formatted_text = extractor.format_text_for_embedding(text_data)
         
@@ -335,7 +335,7 @@ class TextEmbeddingGenerator:
             Dictionary mapping patient_id to embedding
         """
         # Format all texts first
-        from .enhanced_text_extractor import EnhancedTextExtractor
+        from generators.enhanced_text_extractor import EnhancedTextExtractor
         extractor = EnhancedTextExtractor(None)
         
         formatted_texts = []

@@ -19,15 +19,23 @@ import numpy as np
 embeddings_path = Path(__file__).parent.parent / 'Create_Embeddings'
 sys.path.insert(0, str(embeddings_path))
 
+# Import ETL tracker for incremental loading
+kg_scripts_dir = Path(__file__).parent.parent / 'Generate_Clinical_Knowledge_Graphs'
+sys.path.insert(0, str(kg_scripts_dir))
+try:
+    from etl_tracker import ETLTracker
+except ImportError:
+    ETLTracker = None
+
 # Import new embedding system modules
 from pipeline.embedding_pipeline import HybridEmbeddingPipeline
 from utils.config import Config
 
 # Setup logging
 # Get project root and create logs directory
-# This file is at: Scripts/Run_Pipeline/create_embeddings_pipeline.py
-# Need to go up 2 levels to reach Phase1/
-project_root = Path(__file__).parent.parent
+# This file is at: Scripts/Run_Pipeline/2_create_embeddings_pipeline.py
+# Need to go up 3 levels to reach Phase1/ (Run_Pipeline -> Scripts -> Phase1)
+project_root = Path(__file__).parent.parent.parent
 logs_dir = project_root / 'logs'
 logs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -44,6 +52,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 logger.info(f"Log file: {log_file}")
+
+# Log ETL tracker availability
+if ETLTracker is None:
+    logger.warning("ETLTracker not found. Incremental loading will be disabled.")
+else:
+    logger.info("ETLTracker available. Incremental loading enabled.")
 
 
 class BatchProgress:
@@ -115,22 +129,32 @@ class BatchProgress:
 class LargeScaleBatchPipeline:
     """Pipeline optimized for large-scale patient datasets (100K+) using hybrid storage"""
     
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, tracker: Optional[ETLTracker] = None, tracker_file: Optional[str] = None):
         self.config = config
         self.pipeline = None
         self.progress = BatchProgress(config.progress_file)
+        self.tracker = tracker
+        self.tracker_file = tracker_file
         
         logger.info("Initializing Large-Scale Hybrid Embedding Pipeline")
         logger.info(f"Batch size: {config.batch_processing.batch_size}")
         logger.info("Using Neo4j for node-level embeddings")
         logger.info("Using Milvus for item-level embeddings")
+        if tracker or tracker_file:
+            logger.info("Incremental load mode: ENABLED (using ETL tracker)")
+        else:
+            logger.info("Incremental load mode: DISABLED (full load)")
     
     def setup(self):
         """Setup all components"""
         logger.info("Setting up hybrid embedding pipeline...")
         
-        # Initialize the new hybrid pipeline
-        self.pipeline = HybridEmbeddingPipeline(self.config)
+        # Initialize the new hybrid pipeline with tracker support
+        self.pipeline = HybridEmbeddingPipeline(
+            self.config,
+            tracker=self.tracker,
+            tracker_file=self.tracker_file
+        )
         self.pipeline.setup()  # Milvus is required
         
         logger.info("Pipeline setup complete [OK]")
@@ -815,7 +839,7 @@ class LargeScaleBatchPipeline:
             similarity_function=self.config.vector_search.similarity_function
         )
     
-    def run_full_batch_pipeline(self, reset_progress: bool = False, skip_items: bool = False, force_items: bool = False):
+    def run_full_batch_pipeline(self, reset_progress: bool = False, skip_items: bool = False, force_items: bool = False, force_patients: bool = False):
         """
         Run complete batch pipeline for all unprocessed patients
         
@@ -823,6 +847,7 @@ class LargeScaleBatchPipeline:
             reset_progress: If True, reset progress and start from beginning
             skip_items: If True, skip item embedding generation
             force_items: If True, regenerate item embeddings even if they exist
+            force_patients: If True, regenerate patient embeddings even if they exist
         """
         logger.info("\n" + "=" * 80)
         logger.info("STARTING LARGE-SCALE HYBRID EMBEDDING PIPELINE")
@@ -839,7 +864,8 @@ class LargeScaleBatchPipeline:
             logger.info("\n[STEP 1] Generating patient embeddings (Neo4j)...")
             self.pipeline.generate_patient_embeddings(
                 patient_ids=None,  # Process all patients
-                batch_size=self.config.batch_processing.batch_size
+                batch_size=self.config.batch_processing.batch_size,
+                force=force_patients
             )
             
             # Step 2: Generate item embeddings (item-level in Milvus)
@@ -1150,6 +1176,11 @@ def main():
         help='Force regeneration of item embeddings even if they already exist'
     )
     parser.add_argument(
+        '--force-patients',
+        action='store_true',
+        help='Force regeneration of patient embeddings even if they already exist'
+    )
+    parser.add_argument(
         '--only-items',
         action='store_true',
         help='Only generate item embeddings, skip patient embeddings'
@@ -1183,7 +1214,14 @@ def main():
         logger.info(f"Using batch size: {args.batch_size}")
     
     # Initialize pipeline
-    pipeline = LargeScaleBatchPipeline(config)
+    # Initialize ETL tracker for incremental loading
+    tracker_file = project_root / 'logs' / 'etl_tracker.csv'
+    tracker = None
+    if ETLTracker is not None:
+        tracker = ETLTracker(str(tracker_file))
+        logger.info(f"Initialized ETL tracker from: {tracker_file}")
+    
+    pipeline = LargeScaleBatchPipeline(config, tracker=tracker, tracker_file=str(tracker_file) if tracker else None)
     
     try:
         pipeline.setup()  # Milvus is required
@@ -1213,7 +1251,8 @@ def main():
             pipeline.run_full_batch_pipeline(
                 reset_progress=args.reset,
                 skip_items=args.skip_items,
-                force_items=args.force_items
+                force_items=args.force_items,
+                force_patients=args.force_patients
             )
             
         elif args.mode == 'test':

@@ -1,4 +1,5 @@
 # full_load.py - Execute all knowledge graph loading scripts in order
+# Supports both FULL LOAD (first run) and INCREMENTAL LOAD (subsequent runs)
 import logging
 import sys
 import os
@@ -11,6 +12,10 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 scripts_root = os.path.dirname(script_dir)
 project_root = os.path.dirname(scripts_root)
 kg_scripts_dir = os.path.join(scripts_root, 'Generate_Clinical_Knowledge_Graphs')
+
+# Import ETL tracker
+sys.path.insert(0, kg_scripts_dir)
+from etl_tracker import ETLTracker
 
 # Create logs directory if it doesn't exist
 logs_dir = os.path.join(project_root, 'logs')
@@ -61,10 +66,23 @@ def run_script(script_name, function_callable, step_number, total_steps):
 
 def main():
     """Execute all knowledge graph loading scripts in sequence"""
+    # Initialize ETL tracker
+    tracker_file = os.path.join(project_root, 'logs', 'etl_tracker.csv')
+    tracker = ETLTracker(tracker_file)
+    
+    # Determine if this is a full load or incremental load
+    processed_patients = tracker.get_all_processed_patients()
+    is_full_load = len(processed_patients) == 0
+    
     logger.info("=" * 80)
-    logger.info("STARTING FULL KNOWLEDGE GRAPH LOAD")
+    if is_full_load:
+        logger.info("STARTING FULL KNOWLEDGE GRAPH LOAD (First Run)")
+    else:
+        logger.info(f"STARTING INCREMENTAL KNOWLEDGE GRAPH LOAD")
+        logger.info(f"Found {len(processed_patients)} already processed patients in tracker")
     logger.info("=" * 80)
     logger.info(f"Log file: {log_filename}")
+    logger.info(f"Tracker file: {tracker_file}")
     logger.info("")
     
     overall_start_time = time.time()
@@ -100,30 +118,31 @@ def main():
         logger.exception("Full traceback:")
         sys.exit(1)
     
-    # Define the execution pipeline
+    # Define the execution pipeline with tracker support
+    # Scripts that support tracker will receive it, others will work as before
     pipeline = [
         # Clinical note processing (must run first)
         ("48_convert_text_clinical_node_to_json.py", lambda: script48.main()),
         ("49_clinical_notes_flatenning.py", lambda: script49.main()),
         
-        # Data loading scripts
-        ("1_add_patient_nodes.py", lambda: script1.add_patient_nodes()),
-        ("2_patient_flow_through_the_hospital.py", lambda: script2.create_patient_flow()),
-        ("3_add_icu_stays_label.py", lambda: script3.add_icu_stays_label()),
-        ("4_add_prescription_nodes.py", lambda: script4.create_prescription_nodes()),
-        ("5_add_procedure_nodes.py", lambda: script5.create_procedure_nodes()),
-        ("6_add_diagnosis_nodes.py", lambda: script6.create_diagnosis_nodes()),
-        ("7_add_labevent_nodes.py", lambda: script7.create_labevent_nodes()),
-        ("8_add_drg_codes.py", lambda: script8.add_drg_codes()),
-        ("9_add_micro_biology_events.py", lambda: script9.create_microbiology_nodes()),
-        ("10_add_provider_nodes.py", lambda: script10.add_provider_nodes()),
-        ("11_add_assessment_nodes.py", lambda: script11.create_initial_assessment_nodes()),
-        ("12_add_past_history.py", lambda: script12.add_past_history_nodes()),
-        ("13_update_chief_complaints.py", lambda: script13.update_chief_complaints()),
-        ("15_add_discharge_clinical_note.py", lambda: script15.add_discharge_clinical_note_nodes()),
-        ("16_add_allergies_identified_node.py", lambda: script16.add_allergy_identified_nodes()),
-        ("17_add_hpi_summary_node.py", lambda: script17.add_hpi_summary_nodes()),
-        ("18_add_hospitalization_data.py", lambda: script18.add_hospitalization_data()),
+        # Data loading scripts (with tracker support where applicable)
+        ("1_add_patient_nodes.py", lambda: script1.add_patient_nodes(tracker=tracker)),
+        ("2_patient_flow_through_the_hospital.py", lambda: script2.create_patient_flow(tracker=tracker)),
+        ("3_add_icu_stays_label.py", lambda: script3.add_icu_stays_label(tracker=tracker)),
+        ("4_add_prescription_nodes.py", lambda: script4.create_prescription_nodes(tracker=tracker)),
+        ("5_add_procedure_nodes.py", lambda: script5.create_procedure_nodes(tracker=tracker)),
+        ("6_add_diagnosis_nodes.py", lambda: script6.create_diagnosis_nodes(tracker=tracker)),
+        ("7_add_labevent_nodes.py", lambda: script7.create_labevent_nodes(tracker=tracker)),
+        ("8_add_drg_codes.py", lambda: script8.add_drg_codes(tracker=tracker)),
+        ("9_add_micro_biology_events.py", lambda: script9.create_microbiology_nodes(tracker=tracker)),
+        ("10_add_provider_nodes.py", lambda: script10.add_provider_nodes(tracker=tracker)),
+        ("11_add_assessment_nodes.py", lambda: script11.create_initial_assessment_nodes(tracker=tracker)),
+        ("12_add_past_history.py", lambda: script12.add_past_history_nodes(tracker=tracker)),
+        ("13_update_chief_complaints.py", lambda: script13.update_chief_complaints(tracker=tracker)),
+        ("15_add_discharge_clinical_note.py", lambda: script15.add_discharge_clinical_note_nodes(tracker=tracker)),
+        ("16_add_allergies_identified_node.py", lambda: script16.add_allergy_identified_nodes(tracker=tracker)),
+        ("17_add_hpi_summary_node.py", lambda: script17.add_hpi_summary_nodes(tracker=tracker)),
+        ("18_add_hospitalization_data.py", lambda: script18.add_hospitalization_data(tracker=tracker)),
     ]
     
     total_steps = len(pipeline) + 1  # +1 for cleanup script
@@ -400,7 +419,18 @@ def main():
     
     if failed_steps == 0:
         logger.info("✓ ALL STEPS COMPLETED SUCCESSFULLY!")
-        logger.info("Knowledge graph has been fully loaded.")
+        if is_full_load:
+            logger.info("Knowledge graph has been fully loaded.")
+        else:
+            logger.info("Knowledge graph has been incrementally updated.")
+        
+        # Print tracker summary
+        summary = tracker.get_processing_summary()
+        if summary:
+            logger.info("")
+            logger.info("ETL Tracker Summary:")
+            for script_name, count in summary.items():
+                logger.info(f"  {script_name}: {count} patients processed")
     else:
         logger.error("✗ SOME STEPS FAILED!")
         logger.error("Please check the log for details and fix errors before retrying.")

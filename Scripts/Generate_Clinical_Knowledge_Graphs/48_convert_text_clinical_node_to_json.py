@@ -33,6 +33,7 @@ import time
 # ═══════════════════════════════════════════════════════════════
 # Add your API keys below - the script will rotate through them if one hits rate limits
 API_KEYS = [
+    'AIzaSyCRFuHHqXIeRDiDNE_TGr27iWciLkJ0QjU',
     'AIzaSyDG9VKp-kD1y0-xT-5ivV7Ldni-YDR-wOk',  # Primary key
     'AIzaSyDt0APSsM1N9G_7mpPhpJzNOB-8h3W4SNc',                    # Backup key 1
     'AIzaSyCtkc5BuyPggHUWhoz_iNToHVDCs6Pn3Pc',  

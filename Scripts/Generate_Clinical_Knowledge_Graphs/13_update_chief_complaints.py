@@ -4,6 +4,9 @@ from neo4j import GraphDatabase
 import logging
 import os
 import re
+from typing import Optional
+from incremental_load_utils import IncrementalLoadChecker
+from etl_tracker import ETLTracker
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -53,11 +56,12 @@ def is_semantically_duplicate(existing_complaint, new_complaint):
     
     return False
 
-def update_chief_complaints():
+def update_chief_complaints(tracker: Optional[ETLTracker] = None):
     # Neo4j configuration
     URI = "neo4j://127.0.0.1:7687"
     AUTH = ("neo4j", "admin123")
     DATABASE = "clinicalknowledgegraph"
+    SCRIPT_NAME = '13_update_chief_complaints'
 
     # File path (relative to script location)
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -87,13 +91,29 @@ def update_chief_complaints():
         logger.info(f"Found {len(clinical_notes_df)} records with hadm_id and chief_complaint")
 
         with driver.session() as session:
+            # Check for already updated chief complaints (incremental load support)
+            # This script updates existing InitialAssessment nodes, so we check if the complaint
+            # from notes is already in the assessment's chiefcomplaint field
+            checker = IncrementalLoadChecker(driver, tracker=tracker)
+            
             updated_count = 0
             skipped_count = 0
             no_ed_count = 0
+            already_updated_count = 0
+            
+            # Track processed patients for this script (per-patient, per-script tracking)
+            processed_patients = set()
+            skipped_patients = set()
             
             for _, row in clinical_notes_df.iterrows():
                 hadm_id = int(row['hadm_id'])
+                subject_id = int(row['subject_id']) if pd.notna(row.get('subject_id')) else None
                 chief_complaint_from_notes = str(row['chief_complaint'])
+                
+                # Check per-patient, per-script tracking first (if we have subject_id)
+                if subject_id is not None and tracker and tracker.is_patient_processed(subject_id, SCRIPT_NAME):
+                    skipped_patients.add(subject_id)
+                    # Still process to check if update is needed, but mark as skipped for tracking
                 
                 # Find EmergencyDepartment node with this hadm_id and get InitialAssessment
                 query_get = """
@@ -122,7 +142,9 @@ def update_chief_complaints():
                 
                 # Check if we should add the new complaint
                 if is_semantically_duplicate(current_complaint, chief_complaint_from_notes):
-                    logger.info(f"Skipping duplicate complaint for stay_id {stay_id}: '{chief_complaint_from_notes}' already in '{current_complaint}'")
+                    already_updated_count += 1
+                    if already_updated_count == 1 or already_updated_count % 100 == 0:
+                        logger.info(f"Skipping duplicate complaint for stay_id {stay_id}: '{chief_complaint_from_notes}' already in '{current_complaint}' (incremental load). Total skipped: {already_updated_count}")
                     skipped_count += 1
                     continue
                 
@@ -145,11 +167,23 @@ def update_chief_complaints():
                 
                 logger.info(f"Updated InitialAssessment for stay_id {stay_id}: '{current_complaint}' -> '{updated_complaint}'")
                 updated_count += 1
+                if subject_id is not None:
+                    processed_patients.add(subject_id)
+            
+            # Mark processed patients in tracker (per-patient, per-script tracking)
+            if tracker and processed_patients:
+                tracker.mark_patients_processed_batch(list(processed_patients), SCRIPT_NAME, status='success')
+                logger.info(f"Marked {len(processed_patients)} patients as processed in tracker for script '{SCRIPT_NAME}' (incremental load: will skip these patients on next run)")
+            
+            if skipped_patients:
+                logger.info(f"Skipped {len(skipped_patients)} patients that were already processed by {SCRIPT_NAME} (tracker)")
         
         logger.info(f"\nSummary:")
         logger.info(f"  Updated: {updated_count}")
-        logger.info(f"  Skipped (duplicate): {skipped_count}")
+        logger.info(f"  Skipped (duplicate or already updated): {skipped_count}")
         logger.info(f"  No ED/Assessment found: {no_ed_count}")
+        if already_updated_count > 0:
+            logger.info(f"Incremental load summary: Processed {updated_count} chief complaints, skipped {already_updated_count} that were already updated")
         logger.info("Chief complaint update completed successfully!")
 
     except Exception as e:

@@ -104,9 +104,18 @@ class GraphConfig:
     ])
     
     relationship_types: List[str] = field(default_factory=lambda: [
-        'VISITED_ED', 'LED_TO_UNIT_ADMISSION', 'LED_TO_DISCHARGE',
-        'LED_TO_ED_VISIT', 'LED_TO_ADMISSION', 'LED_TO_ADMISSION_DURING_STAY',
-        'LED_TO_ADMISSION_AFTER_DISCHARGE', 'LED_TO_UNIT_ADMISSION',
+        # Patient flow relationships (updated to reflect new patient flow logic)
+        'VISITED_ED',  # Patient -> EmergencyDepartment
+        'ADMITTED_TO_UNIT',  # Patient -> UnitAdmission (for direct unit admissions)
+        'LED_TO_UNIT_ADMISSION',  # Event -> UnitAdmission (for transfers/admits)
+        'LED_TO_DISCHARGE',  # Event -> Discharge
+        'LED_TO_ED',  # Event -> EmergencyDepartment (between events)
+        'LED_TO_ED_VISIT',  # Discharge -> EmergencyDepartment (for subsequent ED visits)
+        'LED_TO_FIRST_UNIT_ADMISSION',  # HospitalAdmission -> UnitAdmission (first unit)
+        'LED_TO_ADMISSION',  # EmergencyDepartment -> HospitalAdmission (general)
+        'LED_TO_ADMISSION_DURING_STAY',  # EmergencyDepartment -> HospitalAdmission (during ED stay)
+        'LED_TO_ADMISSION_AFTER_DISCHARGE',  # EmergencyDepartment -> HospitalAdmission (after ED discharge)
+        # Clinical data relationships
         'RECORDED_DIAGNOSES', 'ISSUED_PRESCRIPTIONS', 'CONTAINED_PRESCRIPTION',
         'RECORDED_PREVIOUS_MEDICATIONS', 'ADMINISTERED_MEDICATIONS',
         'CONTAINED_PROCEDURE', 'INCLUDED_PROCEDURES',

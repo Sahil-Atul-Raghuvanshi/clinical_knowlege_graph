@@ -64,7 +64,7 @@ class ItemEmbeddingGenerator:
         Process prescription nodes and extract individual medication items
         
         Args:
-            prescription_nodes: List of prescription nodes with 'medicines' array
+            prescription_nodes: List of prescription nodes with 'medicines' array and stable identifiers
             
         Returns:
             List of items with embeddings ready for Milvus
@@ -73,7 +73,11 @@ class ItemEmbeddingGenerator:
         
         for node in prescription_nodes:
             medicines = node.get('medicines', [])
-            source_node_id = str(node.get('id', ''))
+            # Use stable identifiers instead of Neo4j internal ID
+            event_id = str(node.get('event_id', ''))
+            starttime = str(node.get('starttime', ''))
+            # Create stable identifier from event_id and starttime
+            stable_id = f"{event_id}_{starttime}" if event_id and starttime else event_id or starttime or 'unknown'
             
             if not medicines:
                 continue
@@ -84,14 +88,16 @@ class ItemEmbeddingGenerator:
             for idx, (med_text, embedding) in enumerate(zip(medicines, embeddings)):
                 if med_text and med_text.strip():
                     items.append({
-                        'item_id': f"presc_{source_node_id}_{idx}",
+                        'item_id': f"presc_{stable_id}_{idx}",
                         'item_type': 'prescription',
                         'text': med_text,
-                        'source_node_id': source_node_id,
+                        'source_node_id': stable_id,
                         'embedding': embedding,
                         'metadata': {
                             'index': idx,
-                            'node_type': 'Prescription'
+                            'node_type': 'Prescription',
+                            'event_id': event_id,
+                            'starttime': starttime
                         }
                     })
         
@@ -101,12 +107,17 @@ class ItemEmbeddingGenerator:
         self,
         microbiology_nodes: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """Process microbiology event nodes"""
+        """Process microbiology event nodes using stable identifiers"""
         items = []
         
         for node in microbiology_nodes:
             micro_results = node.get('micro_results', [])
-            source_node_id = str(node.get('id', ''))
+            # Use stable identifiers instead of Neo4j internal ID
+            event_id = str(node.get('event_id', ''))
+            subject_id = str(node.get('subject_id', ''))
+            hadm_id = str(node.get('hadm_id', ''))
+            # Create stable identifier from event_id, subject_id, and hadm_id
+            stable_id = f"{event_id}_{subject_id}_{hadm_id}" if event_id else f"{subject_id}_{hadm_id}" if subject_id else hadm_id or 'unknown'
             
             if not micro_results:
                 continue
@@ -116,14 +127,17 @@ class ItemEmbeddingGenerator:
             for idx, (result_text, embedding) in enumerate(zip(micro_results, embeddings)):
                 if result_text and result_text.strip():
                     items.append({
-                        'item_id': f"micro_{source_node_id}_{idx}",
+                        'item_id': f"micro_{stable_id}_{idx}",
                         'item_type': 'microbiology',
                         'text': result_text,
-                        'source_node_id': source_node_id,
+                        'source_node_id': stable_id,
                         'embedding': embedding,
                         'metadata': {
                             'index': idx,
-                            'node_type': 'MicrobiologyEvent'
+                            'node_type': 'MicrobiologyEvent',
+                            'event_id': event_id,
+                            'subject_id': subject_id,
+                            'hadm_id': hadm_id
                         }
                     })
         
@@ -133,12 +147,18 @@ class ItemEmbeddingGenerator:
         self,
         lab_event_nodes: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """Process lab event nodes"""
+        """Process lab event nodes using stable identifiers"""
         items = []
         
         for node in lab_event_nodes:
             lab_results = node.get('lab_results', [])
-            source_node_id = str(node.get('id', ''))
+            # Use stable identifiers instead of Neo4j internal ID
+            event_id = str(node.get('event_id', ''))
+            subject_id = str(node.get('subject_id', ''))
+            hadm_id = str(node.get('hadm_id', ''))
+            charttime = str(node.get('charttime', ''))
+            # Create stable identifier from event_id, subject_id, hadm_id, and charttime
+            stable_id = f"{event_id}_{subject_id}_{hadm_id}_{charttime}" if event_id else f"{subject_id}_{hadm_id}_{charttime}" if subject_id else f"{hadm_id}_{charttime}" if hadm_id else charttime or 'unknown'
             
             if not lab_results:
                 continue
@@ -148,14 +168,18 @@ class ItemEmbeddingGenerator:
             for idx, (result_text, embedding) in enumerate(zip(lab_results, embeddings)):
                 if result_text and result_text.strip():
                     items.append({
-                        'item_id': f"lab_{source_node_id}_{idx}",
+                        'item_id': f"lab_{stable_id}_{idx}",
                         'item_type': 'lab_result',
                         'text': result_text,
-                        'source_node_id': source_node_id,
+                        'source_node_id': stable_id,
                         'embedding': embedding,
                         'metadata': {
                             'index': idx,
-                            'node_type': 'LabEvent'
+                            'node_type': 'LabEvent',
+                            'event_id': event_id,
+                            'subject_id': subject_id,
+                            'hadm_id': hadm_id,
+                            'charttime': charttime
                         }
                     })
         
@@ -165,11 +189,16 @@ class ItemEmbeddingGenerator:
         self,
         diagnosis_nodes: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """Process diagnosis nodes"""
+        """Process diagnosis nodes using stable identifiers"""
         items = []
         
         for node in diagnosis_nodes:
-            source_node_id = str(node.get('id', ''))
+            # Use stable identifiers instead of Neo4j internal ID
+            event_id = str(node.get('event_id', ''))
+            subject_id = str(node.get('subject_id', ''))
+            hadm_id = str(node.get('hadm_id', ''))
+            # Create stable identifier from event_id, subject_id, and hadm_id
+            stable_id = f"{event_id}_{subject_id}_{hadm_id}" if event_id else f"{subject_id}_{hadm_id}" if subject_id else hadm_id or 'unknown'
             
             # Process primary diagnoses
             primary = node.get('primary_diagnoses', [])
@@ -178,15 +207,18 @@ class ItemEmbeddingGenerator:
                 for idx, (diag_text, embedding) in enumerate(zip(primary, embeddings)):
                     if diag_text and diag_text.strip():
                         items.append({
-                            'item_id': f"diag_primary_{source_node_id}_{idx}",
+                            'item_id': f"diag_primary_{stable_id}_{idx}",
                             'item_type': 'diagnosis',
                             'text': diag_text,
-                            'source_node_id': source_node_id,
+                            'source_node_id': stable_id,
                             'embedding': embedding,
                             'metadata': {
                                 'index': idx,
                                 'diagnosis_type': 'primary',
-                                'node_type': 'Diagnosis'
+                                'node_type': 'Diagnosis',
+                                'event_id': event_id,
+                                'subject_id': subject_id,
+                                'hadm_id': hadm_id
                             }
                         })
             
@@ -197,15 +229,18 @@ class ItemEmbeddingGenerator:
                 for idx, (diag_text, embedding) in enumerate(zip(secondary, embeddings)):
                     if diag_text and diag_text.strip():
                         items.append({
-                            'item_id': f"diag_secondary_{source_node_id}_{idx}",
+                            'item_id': f"diag_secondary_{stable_id}_{idx}",
                             'item_type': 'diagnosis',
                             'text': diag_text,
-                            'source_node_id': source_node_id,
+                            'source_node_id': stable_id,
                             'embedding': embedding,
                             'metadata': {
                                 'index': idx,
                                 'diagnosis_type': 'secondary',
-                                'node_type': 'Diagnosis'
+                                'node_type': 'Diagnosis',
+                                'event_id': event_id,
+                                'subject_id': subject_id,
+                                'hadm_id': hadm_id
                             }
                         })
         

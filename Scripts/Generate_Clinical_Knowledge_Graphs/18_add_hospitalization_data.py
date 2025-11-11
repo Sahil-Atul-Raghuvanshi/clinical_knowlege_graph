@@ -5,6 +5,9 @@ import logging
 import os
 import re
 import sys
+from typing import Optional
+from incremental_load_utils import IncrementalLoadChecker
+from etl_tracker import ETLTracker
 
 # Configure logging with UTF-8 encoding
 logging.basicConfig(
@@ -71,7 +74,7 @@ def parse_medications(medications_string):
     return medications
 
 def create_hospital_admission_node(session, row):
-    """Update HospitalAdmission node with clinical note data"""
+    """Create or update HospitalAdmission node with clinical note data"""
     subject_id = int(row['subject_id'])
     hadm_id = int(row['hadm_id'])
     
@@ -86,8 +89,17 @@ def create_hospital_admission_node(session, row):
     }
     
     query = """
-    MATCH (ha:HospitalAdmission {hadm_id: $hadm_id})
-    SET ha.subject_id = $subject_id,
+    MERGE (ha:HospitalAdmission {hadm_id: $hadm_id})
+    ON CREATE SET 
+        ha.name = 'HospitalAdmission',
+        ha.subject_id = $subject_id,
+        ha.note_id = $note_id,
+        ha.service = $service,
+        ha.chief_complaint = $chief_complaint,
+        ha.social_history = $social_history,
+        ha.family_history = $family_history
+    ON MATCH SET
+        ha.subject_id = $subject_id,
         ha.note_id = $note_id,
         ha.service = $service,
         ha.chief_complaint = $chief_complaint,
@@ -101,7 +113,7 @@ def create_hospital_admission_node(session, row):
     return record and record['admission_exists']
 
 def create_admission_vitals_node(session, row):
-    """Create AdmissionVitals node and link to HospitalAdmission"""
+    """Create AdmissionVitals node and link to HospitalAdmission (creates HospitalAdmission if missing)"""
     hadm_id = int(row['hadm_id'])
     vitals_string = row['admission_vitals']
     
@@ -114,7 +126,9 @@ def create_admission_vitals_node(session, row):
     vitals_id = f"{hadm_id}_admission_vitals"
     
     query = """
-    MATCH (ha:HospitalAdmission {hadm_id: $hadm_id})
+    MERGE (ha:HospitalAdmission {hadm_id: $hadm_id})
+    ON CREATE SET ha.name = 'HospitalAdmission'
+    WITH ha
     MERGE (av:AdmissionVitals {vitals_id: $vitals_id})
     SET av.name = 'AdmissionVitals',
         av.hadm_id = $hadm_id
@@ -137,7 +151,7 @@ def create_admission_vitals_node(session, row):
     return record and record['admission_exists']
 
 def create_admission_labs_node(session, row):
-    """Create AdmissionLabs node with array of lab tests and link to HospitalAdmission"""
+    """Create AdmissionLabs node with array of lab tests and link to HospitalAdmission (creates HospitalAdmission if missing)"""
     hadm_id = int(row['hadm_id'])
     labs_string = row['admission_labs']
     
@@ -150,7 +164,9 @@ def create_admission_labs_node(session, row):
     labs_id = f"{hadm_id}_admission_labs"
     
     query = """
-    MATCH (ha:HospitalAdmission {hadm_id: $hadm_id})
+    MERGE (ha:HospitalAdmission {hadm_id: $hadm_id})
+    ON CREATE SET ha.name = 'HospitalAdmission'
+    WITH ha
     MERGE (al:AdmissionLabs {labs_id: $labs_id})
     SET al.name = 'AdmissionLabs',
         al.hadm_id = $hadm_id,
@@ -164,7 +180,7 @@ def create_admission_labs_node(session, row):
     return record and record['admission_exists']
 
 def create_admission_medications_node(session, row):
-    """Create AdmissionMedications node with array of medications and link to HospitalAdmission"""
+    """Create AdmissionMedications node with array of medications and link to HospitalAdmission (creates HospitalAdmission if missing)"""
     hadm_id = int(row['hadm_id'])
     medications_string = row['admission_medications']
     
@@ -177,7 +193,9 @@ def create_admission_medications_node(session, row):
     med_id = f"{hadm_id}_admission_medications"
     
     query = """
-    MATCH (ha:HospitalAdmission {hadm_id: $hadm_id})
+    MERGE (ha:HospitalAdmission {hadm_id: $hadm_id})
+    ON CREATE SET ha.name = 'HospitalAdmission'
+    WITH ha
     MERGE (am:AdmissionMedications {medications_id: $med_id})
     SET am.name = 'AdmissionMedications',
         am.hadm_id = $hadm_id,
@@ -191,7 +209,7 @@ def create_admission_medications_node(session, row):
     return record and record['admission_exists']
 
 def create_discharge_clinical_note_node(session, row):
-    """Create DischargeClinicalNote node and link to Discharge"""
+    """Create DischargeClinicalNote node and link to Discharge (creates Discharge if missing)"""
     subject_id = int(row['subject_id'])
     hadm_id = int(row['hadm_id'])
     note_id = str(row['note_id']) if pd.notna(row['note_id']) else None
@@ -219,7 +237,13 @@ def create_discharge_clinical_note_node(session, row):
     }
     
     query = """
-    MATCH (d:Discharge {hadm_id: $hadm_id})
+    MERGE (d:Discharge {hadm_id: $hadm_id})
+    ON CREATE SET 
+        d.name = 'Discharge',
+        d.subject_id = $subject_id
+    ON MATCH SET
+        d.subject_id = $subject_id
+    WITH d
     MERGE (dcn:DischargeClinicalNote {note_id: $note_id})
     ON CREATE SET 
         dcn.name = 'DischargeClinicalNote',
@@ -363,7 +387,7 @@ def create_discharge_medications_node(session, row):
     return record and record['note_exists']
 
 def create_discharge_node(session, row):
-    """Create Discharge node and link to Patient"""
+    """Create Discharge node and link to Patient (creates Patient if missing)"""
     subject_id = int(row['subject_id'])
     hadm_id = int(row['hadm_id'])
     
@@ -378,7 +402,9 @@ def create_discharge_node(session, row):
     }
     
     query = """
-    MATCH (p:Patient {subject_id: $subject_id})
+    MERGE (p:Patient {subject_id: $subject_id})
+    ON CREATE SET p.name = 'Patient'
+    WITH p
     MERGE (d:Discharge {hadm_id: $hadm_id})
     ON CREATE SET 
         d.name = 'Discharge',
@@ -396,15 +422,15 @@ def create_discharge_node(session, row):
         d.facility_name = $facility_name,
         d.allergies = $allergies,
         d.major_procedure = $major_procedure
-    RETURN p IS NOT NULL as patient_exists
+    RETURN d IS NOT NULL as discharge_exists
     """
     
     result = session.run(query, **properties)
     record = result.single()
-    return record and record['patient_exists']
+    return record and record['discharge_exists']
 
 def create_medications_started_node(session, row):
-    """Create MedicationStarted node with array of medications and link to Discharge"""
+    """Create MedicationStarted node with array of medications and link to Discharge (creates Discharge if missing)"""
     hadm_id = int(row['hadm_id'])
     medications_string = row['medications_started']
     
@@ -417,7 +443,9 @@ def create_medications_started_node(session, row):
     med_id = f"{hadm_id}_medications_started"
     
     query = """
-    MATCH (d:Discharge {hadm_id: $hadm_id})
+    MERGE (d:Discharge {hadm_id: $hadm_id})
+    ON CREATE SET d.name = 'Discharge'
+    WITH d
     MERGE (ms:MedicationStarted {medications_id: $med_id})
     SET ms.name = 'MedicationStarted',
         ms.hadm_id = $hadm_id,
@@ -431,7 +459,7 @@ def create_medications_started_node(session, row):
     return record and record['discharge_exists']
 
 def create_medications_stopped_node(session, row):
-    """Create MedicationStopped node with array of medications and link to Discharge"""
+    """Create MedicationStopped node with array of medications and link to Discharge (creates Discharge if missing)"""
     hadm_id = int(row['hadm_id'])
     medications_string = row['medications_stopped']
     
@@ -444,7 +472,9 @@ def create_medications_stopped_node(session, row):
     med_id = f"{hadm_id}_medications_stopped"
     
     query = """
-    MATCH (d:Discharge {hadm_id: $hadm_id})
+    MERGE (d:Discharge {hadm_id: $hadm_id})
+    ON CREATE SET d.name = 'Discharge'
+    WITH d
     MERGE (ms:MedicationStopped {medications_id: $med_id})
     SET ms.name = 'MedicationStopped',
         ms.hadm_id = $hadm_id,
@@ -458,7 +488,7 @@ def create_medications_stopped_node(session, row):
     return record and record['discharge_exists']
 
 def create_medications_to_avoid_node(session, row):
-    """Create MedicationToAvoid node with array of medications and link to Discharge"""
+    """Create MedicationToAvoid node with array of medications and link to Discharge (creates Discharge if missing)"""
     hadm_id = int(row['hadm_id'])
     medications_string = row['medications_to_avoid']
     
@@ -471,7 +501,9 @@ def create_medications_to_avoid_node(session, row):
     med_id = f"{hadm_id}_medications_to_avoid"
     
     query = """
-    MATCH (d:Discharge {hadm_id: $hadm_id})
+    MERGE (d:Discharge {hadm_id: $hadm_id})
+    ON CREATE SET d.name = 'Discharge'
+    WITH d
     MERGE (ma:MedicationToAvoid {medications_id: $med_id})
     SET ma.name = 'MedicationToAvoid',
         ma.hadm_id = $hadm_id,
@@ -484,12 +516,13 @@ def create_medications_to_avoid_node(session, row):
     record = result.single()
     return record and record['discharge_exists']
 
-def add_hospitalization_data():
+def add_hospitalization_data(tracker: Optional[ETLTracker] = None):
     """Main function to add all hospitalization data to Neo4j"""
     # Neo4j configuration
     URI = "neo4j://127.0.0.1:7687"
     AUTH = ("neo4j", "admin123")
     DATABASE = "clinicalknowledgegraph"
+    SCRIPT_NAME = '18_add_hospitalization_data'
 
     # File path (relative to script location)
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -533,14 +566,55 @@ def add_hospitalization_data():
         }
 
         with driver.session() as session:
+            # Check for existing DischargeClinicalNote nodes (incremental load support)
+            checker = IncrementalLoadChecker(driver, tracker=tracker)
+            notes_with_data = set()
+            
+            # Get note_ids that already have DischargeClinicalNote nodes (indicating hospitalization data exists)
+            query_existing = """
+            MATCH (dcn:DischargeClinicalNote)
+            RETURN DISTINCT dcn.note_id AS note_id
+            """
+            result = session.run(query_existing)
+            notes_with_data = {str(record["note_id"]) for record in result if record["note_id"] is not None}
+            logger.info(f"Found {len(notes_with_data)} notes with existing hospitalization data")
+            
+            skipped_count = 0
+            
+            # Track processed patients for this script (per-patient, per-script tracking)
+            processed_patients = set()
+            skipped_patients = set()
+            
             for idx, row in clinical_notes_df.iterrows():
+                note_id = str(row['note_id']) if pd.notna(row.get('note_id')) else None
+                subject_id = int(row['subject_id']) if pd.notna(row.get('subject_id')) else None
+                
+                # Check per-patient, per-script tracking first (if we have subject_id)
+                if subject_id is not None and tracker and tracker.is_patient_processed(subject_id, SCRIPT_NAME):
+                    skipped_patients.add(subject_id)
+                    # Still check event-level to avoid duplicate work
+                    if note_id and note_id in notes_with_data:
+                        skipped_count += 1
+                        if skipped_count == 1 or skipped_count % 100 == 0:
+                            logger.info(f"Skipping note_id {note_id} (hadm_id {row.get('hadm_id')}, patient {subject_id} already processed by {SCRIPT_NAME}). Total skipped: {skipped_count}")
+                        continue
+                
+                # Skip if note already has hospitalization data (incremental load)
+                if note_id and note_id in notes_with_data:
+                    skipped_count += 1
+                    if skipped_count == 1 or skipped_count % 100 == 0:
+                        logger.info(f"Skipping note_id {note_id} (hadm_id {row.get('hadm_id')}) - already has hospitalization data (incremental load). Total skipped: {skipped_count}")
+                    continue
+                
                 logger.info(f"\nProcessing record {idx + 1}/{len(clinical_notes_df)}")
                 logger.info(f"  subject_id: {row['subject_id']}, hadm_id: {row['hadm_id']}")
                 
+                record_processed = False
                 try:
                     # 1. Create HospitalAdmission node
                     if create_hospital_admission_node(session, row):
                         stats['hospital_admission'] += 1
+                        record_processed = True
                         logger.info(f"  ✓ Created/Updated HospitalAdmission")
                         
                         # 2. Create AdmissionVitals node
@@ -561,6 +635,7 @@ def add_hospitalization_data():
                     # 5. Create DischargeClinicalNote node
                     if create_discharge_clinical_note_node(session, row):
                         stats['discharge_clinical_note'] += 1
+                        record_processed = True
                         logger.info(f"  ✓ Created/Updated DischargeClinicalNote")
                         
                         # 6. Create DischargeVitals node
@@ -581,6 +656,7 @@ def add_hospitalization_data():
                     # 9. Create Discharge node
                     if create_discharge_node(session, row):
                         stats['discharge'] += 1
+                        record_processed = True
                         logger.info(f"  ✓ Created/Updated Discharge")
                         
                         # 10. Create MedicationStarted node
@@ -598,9 +674,21 @@ def add_hospitalization_data():
                             stats['medications_to_avoid'] += 1
                             logger.info(f"  ✓ Created MedicationToAvoid")
                     
+                    # Track patient as processed if at least one node was created
+                    if subject_id is not None and record_processed:
+                        processed_patients.add(subject_id)
+                    
                 except Exception as e:
                     logger.error(f"  ✗ Error processing record: {e}")
                     stats['skipped'] += 1
+            
+            # Mark processed patients in tracker (per-patient, per-script tracking)
+            if tracker and processed_patients:
+                tracker.mark_patients_processed_batch(list(processed_patients), SCRIPT_NAME, status='success')
+                logger.info(f"Marked {len(processed_patients)} patients as processed in tracker for script '{SCRIPT_NAME}' (incremental load: will skip these patients on next run)")
+            
+            if skipped_patients:
+                logger.info(f"Skipped {len(skipped_patients)} patients that were already processed by {SCRIPT_NAME} (tracker)")
         
         # Print summary
         logger.info("\n" + "=" * 80)
@@ -619,6 +707,8 @@ def add_hospitalization_data():
         logger.info(f"  - MedicationStopped: {stats['medications_stopped']}")
         logger.info(f"  - MedicationToAvoid: {stats['medications_to_avoid']}")
         logger.info(f"Records skipped (errors): {stats['skipped']}")
+        if skipped_count > 0:
+            logger.info(f"Incremental load summary: Skipped {skipped_count} notes with existing hospitalization data")
         logger.info("=" * 80)
         logger.info("✓ Hospitalization data added successfully!")
 

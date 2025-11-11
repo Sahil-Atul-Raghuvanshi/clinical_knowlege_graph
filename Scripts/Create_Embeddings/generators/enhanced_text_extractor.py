@@ -4,7 +4,7 @@ Extracts comprehensive text data for embedding generation
 """
 import logging
 from typing import Dict, List, Any, Optional
-from ..utils.neo4j_connection import Neo4jConnection
+from utils.neo4j_connection import Neo4jConnection
 
 logger = logging.getLogger(__name__)
 

@@ -4,8 +4,8 @@ Hybrid storage for embeddings: Neo4j for node-level, Milvus for item-level
 import logging
 from typing import Dict, List, Any, Optional
 import numpy as np
-from ..utils.neo4j_connection import Neo4jConnection
-from ..utils.milvus_connection import MilvusConnection, MilvusCollectionManager
+from utils.neo4j_connection import Neo4jConnection
+from utils.milvus_connection import MilvusConnection, MilvusCollectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,8 @@ class HybridEmbeddingStorage:
         self,
         items: List[Dict[str, Any]],
         collection_name: str,
-        batch_size: int = 5000
+        batch_size: int = 5000,
+        force: bool = False
     ) -> int:
         """
         Store item embeddings in Milvus
@@ -110,10 +111,16 @@ class HybridEmbeddingStorage:
             items: List of items with embeddings
             collection_name: Milvus collection name
             batch_size: Batch size for insertion
+            force: If True, insert all items even if they already exist. 
+                   If False, skip items that already exist in Milvus.
             
         Returns:
             Number of items stored
         """
+        if not items:
+            logger.info(f"No items to store in collection '{collection_name}'")
+            return 0
+        
         # Create collection if it doesn't exist
         self.milvus_manager.create_collection(
             collection_name,
@@ -122,12 +129,78 @@ class HybridEmbeddingStorage:
             metric_type="COSINE"
         )
         
+        # Check for existing items if not forcing
+        if not force:
+            logger.info(f"Checking for existing items in collection '{collection_name}'...")
+            item_ids = [item['item_id'] for item in items]
+            logger.debug(f"Checking {len(item_ids)} item_ids for duplicates...")
+            
+            existing_ids = self.milvus_manager.get_existing_item_ids(
+                collection_name,
+                item_ids,
+                batch_size=10000
+            )
+            
+            if existing_ids:
+                logger.info(f"Found {len(existing_ids)} existing items in '{collection_name}', skipping duplicates")
+                # Log a sample of existing IDs for debugging
+                if len(existing_ids) <= 10:
+                    logger.debug(f"Existing item_ids: {sorted(existing_ids)}")
+                else:
+                    sample = sorted(list(existing_ids))[:5]
+                    logger.debug(f"Sample existing item_ids: {sample}... (and {len(existing_ids) - 5} more)")
+                
+                # Filter out existing items
+                new_items = [item for item in items if item['item_id'] not in existing_ids]
+                logger.info(f"Filtered to {len(new_items)} new items to insert (from {len(items)} total)")
+                
+                # Log a sample of new item IDs for debugging
+                if len(new_items) > 0 and len(new_items) <= 10:
+                    new_item_ids = [item['item_id'] for item in new_items]
+                    logger.debug(f"New item_ids to insert: {new_item_ids}")
+                elif len(new_items) > 10:
+                    new_item_ids = [item['item_id'] for item in new_items[:5]]
+                    logger.debug(f"Sample new item_ids to insert: {new_item_ids}... (and {len(new_items) - 5} more)")
+                
+                items = new_items
+            else:
+                logger.info(f"No existing items found in '{collection_name}', inserting all {len(items)} items")
+        else:
+            logger.info(f"Force mode: inserting all {len(items)} items (duplicates will be added)")
+        
+        if not items:
+            logger.info(f"All items already exist in '{collection_name}', nothing to insert")
+            return 0
+        
         # Insert embeddings
+        logger.info(f"Inserting {len(items)} new items into '{collection_name}'...")
         stored_count = self.milvus_manager.insert_embeddings(
             collection_name,
             items,
             batch_size=batch_size
         )
+        
+        # Verify insertion by checking if items were actually stored
+        if stored_count > 0 and not force:
+            logger.debug(f"Verifying insertion of {stored_count} items...")
+            try:
+                # Flush to ensure data is queryable
+                collection = self.milvus_manager.get_collection(collection_name)
+                if collection:
+                    collection.flush(timeout=10)
+                    # Quick verification: check a sample of inserted item_ids
+                    inserted_item_ids = [item['item_id'] for item in items[:min(10, len(items))]]
+                    verified_ids = self.milvus_manager.get_existing_item_ids(
+                        collection_name,
+                        inserted_item_ids,
+                        batch_size=100
+                    )
+                    if len(verified_ids) < len(inserted_item_ids):
+                        logger.warning(f"Verification: Only {len(verified_ids)}/{len(inserted_item_ids)} sample items found after insertion")
+                    else:
+                        logger.debug(f"Verification: All {len(verified_ids)} sample items confirmed in collection")
+            except Exception as verify_err:
+                logger.debug(f"Could not verify insertion: {verify_err}")
         
         logger.info(f"Stored {stored_count} items in Milvus collection '{collection_name}'")
         return stored_count

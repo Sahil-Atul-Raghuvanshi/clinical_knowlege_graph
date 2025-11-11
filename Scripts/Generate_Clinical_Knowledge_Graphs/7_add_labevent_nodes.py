@@ -2,16 +2,20 @@ import pandas as pd
 from neo4j import GraphDatabase
 import logging
 import os
+from typing import Optional
+from incremental_load_utils import IncrementalLoadChecker
+from etl_tracker import ETLTracker
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-def create_labevent_nodes():
+def create_labevent_nodes(tracker: Optional[ETLTracker] = None):
     # Neo4j configuration
     URI = "neo4j://127.0.0.1:7687"
     AUTH = ("neo4j", "admin123")
     DATABASE = "clinicalknowledgegraph"
+    SCRIPT_NAME = '7_add_labevent_nodes'
 
     driver = GraphDatabase.driver(URI, auth=AUTH, database=DATABASE)
 
@@ -112,6 +116,16 @@ def create_labevent_nodes():
                    e.intime AS intime, e.outtime AS outtime
             """
             events = session.run(query_events)
+            
+            # Check for existing lab events (incremental load support)
+            checker = IncrementalLoadChecker(driver, tracker=tracker)
+            events_with_labs = checker.get_events_with_lab_events()
+            skipped_events = 0
+            processed_events = []
+            
+            # Track processed patients for this script (per-patient, per-script tracking)
+            processed_patients = set()
+            skipped_patients = set()
 
             for record in events:
                 event_id = str(record["event_id"]).strip() if record["event_id"] is not None else None
@@ -132,6 +146,25 @@ def create_labevent_nodes():
                     logger.warning(f"Skipping event with invalid ID format: subject_id={subject_id}, hadm_id={hadm_id}")
                     continue
                 
+                # Check per-patient, per-script tracking first
+                if tracker and tracker.is_patient_processed(subject_id_int, SCRIPT_NAME):
+                    skipped_patients.add(subject_id_int)
+                    # Still check event-level to avoid duplicate work
+                    if event_id in events_with_labs:
+                        skipped_events += 1
+                        if skipped_events == 1 or skipped_events % 100 == 0:
+                            logger.info(f"Skipping event {event_id} (patient {subject_id_int} already processed by {SCRIPT_NAME}). Total skipped: {skipped_events}")
+                        continue
+                
+                # Skip if event already has lab events (incremental load)
+                if event_id in events_with_labs:
+                    skipped_events += 1
+                    if skipped_events == 1 or skipped_events % 100 == 0:
+                        logger.info(f"Skipping event {event_id} - already has lab events (incremental load). Total skipped: {skipped_events}")
+                    continue
+                
+                processed_events.append(event_id)
+                
                 intime = pd.to_datetime(record["intime"])
                 outtime = pd.to_datetime(record["outtime"])
 
@@ -148,14 +181,23 @@ def create_labevent_nodes():
 
                 # Create LabEvents node (central node) and link it to the Event
                 # Only create INCLUDED_LAB_EVENTS from these specific node types
+                # Note: Transfer and Admit events are labeled as UnitAdmission (not Transfer or Admission)
                 query_labevents = """
                 MATCH (e {event_id:$event_id})
-                WHERE (e:Admission OR e:HospitalAdmission OR e:Discharge OR e:EmergencyDepartment OR e:ICUStay OR e:Transfer)
+                WHERE (e:UnitAdmission OR e:HospitalAdmission OR e:Discharge OR e:EmergencyDepartment OR e:ICUStay)
                 MERGE (le:LabEvents {event_id:$event_id, hadm_id:$hadm_id, subject_id:$subject_id})
                 ON CREATE SET le.name = "LabEvents"
                 MERGE (e)-[:INCLUDED_LAB_EVENTS]->(le)
+                RETURN e, le
                 """
-                session.run(query_labevents, event_id=event_id, hadm_id=hadm_id_int, subject_id=subject_id_int)
+                result = session.run(query_labevents, event_id=event_id, hadm_id=hadm_id_int, subject_id=subject_id_int)
+                record = result.single()
+                if record is None:
+                    logger.warning(f"Could not find event node with event_id={event_id} (subject_id={subject_id_int}, hadm_id={hadm_id_int}). LabEvents node created but not connected to event.")
+                else:
+                    event_node = record.get("e")
+                    if event_node is None:
+                        logger.warning(f"Event node not found for event_id={event_id}. LabEvents node may not be connected.")
 
                 # Group lab events by charttime to create LabEvent nodes
                 labevent_groups = labevents_for_event.groupby('charttime')
@@ -253,6 +295,21 @@ def create_labevent_nodes():
                     labevent_counter += 1
                 
                 logger.info(f"Added {len(labevents_for_event)} lab events for event {event_id}")
+                
+                # Track patient as processed
+                processed_patients.add(subject_id_int)
+            
+            # Log incremental load summary
+            if skipped_events > 0:
+                logger.info(f"Incremental load summary: Skipped {skipped_events} events that already have lab events")
+            
+            # Mark processed patients in tracker (per-patient, per-script tracking)
+            if tracker and processed_patients:
+                tracker.mark_patients_processed_batch(list(processed_patients), SCRIPT_NAME, status='success')
+                logger.info(f"Marked {len(processed_patients)} patients as processed in tracker for script '{SCRIPT_NAME}' (incremental load: will skip these patients on next run)")
+            
+            if skipped_patients:
+                logger.info(f"Skipped {len(skipped_patients)} patients that were already processed by {SCRIPT_NAME} (tracker)")
 
         logger.info("All lab events processed successfully!")
 

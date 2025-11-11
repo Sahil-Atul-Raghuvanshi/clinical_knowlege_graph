@@ -4,7 +4,7 @@ Structural embedding generator using Neo4j GDS FastRP
 import logging
 from typing import Dict, List, Optional
 import numpy as np
-from ..utils.neo4j_connection import Neo4jConnection
+from utils.neo4j_connection import Neo4jConnection
 
 logger = logging.getLogger(__name__)
 

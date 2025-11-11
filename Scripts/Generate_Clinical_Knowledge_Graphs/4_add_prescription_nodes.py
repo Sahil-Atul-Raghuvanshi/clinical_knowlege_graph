@@ -3,6 +3,9 @@ import pandas as pd
 from neo4j import GraphDatabase
 import logging
 import os
+from typing import Optional
+from incremental_load_utils import IncrementalLoadChecker
+from etl_tracker import ETLTracker
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -104,11 +107,12 @@ def create_administered_meds(driver):
         logger.error(f"Error processing administered meds: {e}")
         raise
 
-def create_prescription_nodes():
+def create_prescription_nodes(tracker: Optional[ETLTracker] = None):
     # Neo4j configuration
     URI = "neo4j://127.0.0.1:7687"
     AUTH = ("neo4j", "admin123")
     DATABASE = "clinicalknowledgegraph"
+    SCRIPT_NAME = '4_add_prescription_nodes'
 
     # File paths (relative to script location)
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -209,17 +213,18 @@ def create_prescription_nodes():
             else:
                 logger.info("No cross-connections found.")
             
-            # Fetch all event nodes with intime/outtime
+            # Fetch all event nodes with intime/outtime and subject_id
             query_events = """
             MATCH (e)
-            WHERE e.intime IS NOT NULL AND e.outtime IS NOT NULL
-            RETURN e.event_id AS event_id, e.intime AS intime, e.outtime AS outtime
+            WHERE e.intime IS NOT NULL AND e.outtime IS NOT NULL AND e.subject_id IS NOT NULL
+            RETURN e.event_id AS event_id, e.subject_id AS subject_id, e.intime AS intime, e.outtime AS outtime
             """
             events = session.run(query_events)
 
             event_list = [
                 {
                     "event_id": record["event_id"],
+                    "subject_id": record["subject_id"],
                     "intime": pd.to_datetime(record["intime"]),
                     "outtime": pd.to_datetime(record["outtime"]),
                 }
@@ -227,6 +232,12 @@ def create_prescription_nodes():
             ]
 
             logger.info(f"Found {len(event_list)} events with intime/outtime")
+            
+            # Check for existing prescriptions (incremental load support)
+            checker = IncrementalLoadChecker(driver, tracker=tracker)
+            events_with_prescriptions = checker.get_events_with_prescriptions()
+            skipped_events = 0
+            processed_events = []
 
             # Track which prescription rows have been assigned to events
             assigned_prescription_indices = set()
@@ -234,12 +245,43 @@ def create_prescription_nodes():
             # Track created prescription batches and nodes for reporting
             created_batches = []
             created_prescriptions = []
+            
+            # Track processed patients for this script (per-patient, per-script tracking)
+            processed_patients = set()
+            skipped_patients = set()
 
             # Iterate over events and associate prescriptions
             for event in event_list:
-                event_id = event["event_id"]
+                event_id = str(event["event_id"])
+                subject_id = event.get("subject_id")
                 intime = event["intime"]
                 outtime = event["outtime"]
+                
+                # Extract subject_id and check per-patient, per-script tracking
+                subject_id_int = None
+                if subject_id is not None:
+                    try:
+                        subject_id_int = int(subject_id)
+                        # Check if this patient was already processed by this script
+                        if tracker and tracker.is_patient_processed(subject_id_int, SCRIPT_NAME):
+                            skipped_patients.add(subject_id_int)
+                            # Still check event-level to avoid duplicate work
+                            if event_id in events_with_prescriptions:
+                                skipped_events += 1
+                                if skipped_events == 1 or skipped_events % 100 == 0:
+                                    logger.info(f"Skipping event {event_id} (patient {subject_id_int} already processed by {SCRIPT_NAME}). Total skipped: {skipped_events}")
+                                continue
+                    except (ValueError, TypeError):
+                        pass
+                
+                # Skip if event already has prescriptions (incremental load)
+                if event_id in events_with_prescriptions:
+                    skipped_events += 1
+                    if skipped_events == 1 or skipped_events % 100 == 0:
+                        logger.info(f"Skipping event {event_id} - already has prescriptions (incremental load). Total skipped: {skipped_events}")
+                    continue
+                
+                processed_events.append(event_id)
 
                 # Filter prescriptions within the event period
                 presc_for_event = presc_df[
@@ -334,6 +376,10 @@ def create_prescription_nodes():
                     prescription_counter += 1
                 
                 logger.info(f"Processed {len(presc_for_event)} medicines in {len(prescription_groups)} prescriptions for event {event_id}")
+                
+                # Track patient as processed if we have subject_id
+                if subject_id_int is not None:
+                    processed_patients.add(subject_id_int)
 
             # Query database to check actual connectivity
             logger.info("")
@@ -444,6 +490,18 @@ def create_prescription_nodes():
                 logger.warning(f"=" * 80)
             else:
                 logger.info("✓ All prescriptions successfully connected to events!")
+            
+            # Log incremental load summary
+            if skipped_events > 0:
+                logger.info(f"Incremental load summary: Skipped {skipped_events} events that already have prescriptions")
+            
+            # Mark processed patients in tracker (per-patient, per-script tracking)
+            if tracker and processed_patients:
+                tracker.mark_patients_processed_batch(list(processed_patients), SCRIPT_NAME, status='success')
+                logger.info(f"Marked {len(processed_patients)} patients as processed in tracker for script '{SCRIPT_NAME}' (incremental load: will skip these patients on next run)")
+            
+            if skipped_patients:
+                logger.info(f"Skipped {len(skipped_patients)} patients that were already processed by {SCRIPT_NAME} (tracker)")
 
         logger.info("All prescriptions processed successfully!")
 

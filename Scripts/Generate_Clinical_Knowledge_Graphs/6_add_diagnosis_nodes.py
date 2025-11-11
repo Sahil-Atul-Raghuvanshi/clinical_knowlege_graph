@@ -2,6 +2,9 @@ import pandas as pd
 from neo4j import GraphDatabase
 import logging
 import os
+from typing import Optional
+from incremental_load_utils import IncrementalLoadChecker
+from etl_tracker import ETLTracker
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -146,11 +149,12 @@ def add_primary_secondary_diagnoses(driver):
         logger.error(f"Error processing primary/secondary diagnoses: {e}")
         raise
 
-def create_diagnosis_nodes():
+def create_diagnosis_nodes(tracker: Optional[ETLTracker] = None):
     # Neo4j configuration
     URI = "neo4j://127.0.0.1:7687"
     AUTH = ("neo4j", "admin123")
     DATABASE = "clinicalknowledgegraph"
+    SCRIPT_NAME = '6_add_diagnosis_nodes'
 
     driver = GraphDatabase.driver(URI, auth=AUTH, database=DATABASE)
 
@@ -169,12 +173,32 @@ def create_diagnosis_nodes():
 
     try:
         with driver.session() as session:
+            # Check for existing diagnoses (incremental load support)
+            checker = IncrementalLoadChecker(driver, tracker=tracker)
+            discharges_with_diagnoses = set()
+            
+            # Get discharge events that already have Diagnosis nodes
+            query_existing = """
+            MATCH (d:Discharge)-[:RECORDED_DIAGNOSES]->(diag:Diagnosis)
+            RETURN DISTINCT d.event_id AS event_id
+            """
+            result = session.run(query_existing)
+            discharges_with_diagnoses = {str(record["event_id"]) for record in result if record["event_id"] is not None}
+            logger.info(f"Found {len(discharges_with_diagnoses)} discharge events with existing diagnoses")
+            
             # Fetch all discharge nodes with their associated hadm_id
             query_discharges = """
             MATCH (d:Discharge)
             RETURN d.event_id AS event_id, d.hadm_id AS hadm_id, d.subject_id AS subject_id
             """
             discharges = session.run(query_discharges)
+            
+            skipped_count = 0
+            processed_count = 0
+            
+            # Track processed patients for this script (per-patient, per-script tracking)
+            processed_patients = set()
+            skipped_patients = set()
 
             for record in discharges:
                 event_id = record["event_id"]
@@ -194,6 +218,25 @@ def create_diagnosis_nodes():
                 except ValueError:
                     logger.warning(f"Skipping discharge with invalid ID format: hadm_id={hadm_id}, subject_id={subject_id}")
                     continue
+                
+                # Check per-patient, per-script tracking first
+                if tracker and tracker.is_patient_processed(subject_id_int, SCRIPT_NAME):
+                    skipped_patients.add(subject_id_int)
+                    # Still check event-level to avoid duplicate work
+                    if str(event_id) in discharges_with_diagnoses:
+                        skipped_count += 1
+                        if skipped_count == 1 or skipped_count % 100 == 0:
+                            logger.info(f"Skipping discharge {event_id} (patient {subject_id_int} already processed by {SCRIPT_NAME}). Total skipped: {skipped_count}")
+                        continue
+                
+                # Skip if discharge already has diagnoses (incremental load)
+                if str(event_id) in discharges_with_diagnoses:
+                    skipped_count += 1
+                    if skipped_count == 1 or skipped_count % 100 == 0:
+                        logger.info(f"Skipping discharge {event_id} - already has diagnoses (incremental load). Total skipped: {skipped_count}")
+                    continue
+                
+                processed_count += 1
 
                 # Filter diagnoses for this admission (diagnoses are linked to admissions, not events)
                 diags_for_admission = diag_df[
@@ -223,6 +266,21 @@ def create_diagnosis_nodes():
                            subject_id=subject_id_int, titles=diagnosis_titles, count=len(diags_for_admission))
 
                 logger.info(f"Added {len(diags_for_admission)} diagnoses for discharge event {event_id} (admission {hadm_id})")
+                
+                # Track patient as processed
+                processed_patients.add(subject_id_int)
+            
+            # Mark processed patients in tracker (per-patient, per-script tracking)
+            if tracker and processed_patients:
+                tracker.mark_patients_processed_batch(list(processed_patients), SCRIPT_NAME, status='success')
+                logger.info(f"Marked {len(processed_patients)} patients as processed in tracker for script '{SCRIPT_NAME}' (incremental load: will skip these patients on next run)")
+            
+            if skipped_patients:
+                logger.info(f"Skipped {len(skipped_patients)} patients that were already processed by {SCRIPT_NAME} (tracker)")
+            
+            # Log incremental load summary
+            if skipped_count > 0:
+                logger.info(f"Incremental load summary: Processed {processed_count} discharge events, skipped {skipped_count} discharge events with existing diagnoses")
 
         logger.info("All diagnoses processed successfully!")
 

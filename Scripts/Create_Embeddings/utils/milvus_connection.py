@@ -419,4 +419,119 @@ class MilvusCollectionManager:
         except Exception as e:
             logger.error(f"Error getting stats for {collection_name}: {e}")
             return {}
+    
+    def get_existing_item_ids(
+        self,
+        collection_name: str,
+        item_ids: List[str],
+        batch_size: int = 10000
+    ) -> set:
+        """
+        Check which item_ids already exist in the collection
+        
+        Args:
+            collection_name: Name of the collection
+            item_ids: List of item_ids to check
+            batch_size: Batch size for querying (to avoid memory issues)
+            
+        Returns:
+            Set of item_ids that already exist in the collection
+        """
+        collection = self.get_collection(collection_name)
+        if not collection:
+            logger.debug(f"Collection {collection_name} does not exist, no existing items")
+            return set()
+        
+        # Flush collection to ensure all data is queryable
+        try:
+            collection.flush(timeout=10)
+        except Exception as e:
+            logger.debug(f"Could not flush collection (may not be necessary): {e}")
+        
+        # Check if collection is empty
+        try:
+            num_entities = collection.num_entities
+            if num_entities == 0:
+                logger.debug(f"Collection {collection_name} is empty, no existing items")
+                return set()
+            logger.debug(f"Collection {collection_name} has {num_entities} entities")
+        except Exception as e:
+            logger.debug(f"Could not check collection size: {e}")
+            # Continue anyway, will query to be sure
+        
+        existing_ids = set()
+        item_ids_set = set(item_ids)  # For faster lookup
+        
+        # Strategy: For small collections, get all item_ids and do set intersection
+        # For large collections or large item lists, query individually
+        try:
+            # Load collection into memory for querying
+            collection.load()
+            
+            total_count = collection.num_entities
+            
+            # If collection is small enough, get all item_ids at once
+            if total_count <= 50000:  # Reasonable limit for in-memory set
+                logger.debug(f"Collection '{collection_name}' has {total_count} entities, fetching all item_ids...")
+                try:
+                    # Query all item_ids from collection
+                    # Use a limit higher than total_count to ensure we get everything
+                    query_limit = min(total_count + 1000, 100000)  # Add buffer, but cap at reasonable limit
+                    all_results = collection.query(
+                        expr="",  # Empty expression = get all
+                        output_fields=["item_id"],
+                        limit=query_limit
+                    )
+                    all_existing_ids = {result.get('item_id') for result in all_results if result.get('item_id')}
+                    
+                    # Verify we got all items
+                    if len(all_existing_ids) < total_count:
+                        logger.warning(f"Query returned {len(all_existing_ids)} item_ids but collection has {total_count} entities. Some items may be missing.")
+                    
+                    existing_ids = all_existing_ids.intersection(item_ids_set)
+                    logger.info(f"Found {len(existing_ids)} existing item_ids out of {len(item_ids)} checked in '{collection_name}' (collection has {total_count} total, queried {len(all_existing_ids)})")
+                except Exception as query_all_err:
+                    logger.warning(f"Could not query all item_ids at once: {query_all_err}, falling back to individual queries")
+                    # Fall through to individual query approach
+                    raise query_all_err
+            else:
+                # Collection is too large, query items individually
+                logger.debug(f"Collection '{collection_name}' is large ({total_count} entities), checking items individually...")
+                raise Exception("Collection too large for bulk query")
+                
+        except Exception:
+            # Fallback: Query each item individually (slower but works for any size)
+            logger.debug(f"Checking {len(item_ids)} item_ids individually in '{collection_name}'...")
+            collection.load()
+            
+            checked = 0
+            for i, item_id in enumerate(item_ids):
+                try:
+                    # Escape special characters in item_id
+                    escaped_id = item_id.replace('\\', '\\\\').replace('"', '\\"')
+                    filter_expr = f'item_id == "{escaped_id}"'
+                    
+                    results = collection.query(
+                        expr=filter_expr,
+                        output_fields=["item_id"],
+                        limit=1
+                    )
+                    
+                    if results and len(results) > 0:
+                        existing_ids.add(item_id)
+                    
+                    checked += 1
+                    
+                    # Log progress every 1000 items
+                    if (i + 1) % 1000 == 0:
+                        logger.debug(f"Checked {i + 1}/{len(item_ids)} item_ids, found {len(existing_ids)} existing so far...")
+                        
+                except Exception as query_err:
+                    logger.debug(f"Query failed for item_id '{item_id}': {query_err}")
+                    # Continue with next item
+                    continue
+            
+            logger.info(f"Checked {checked} item_ids, found {len(existing_ids)} existing in '{collection_name}'")
+        
+        return existing_ids
 
