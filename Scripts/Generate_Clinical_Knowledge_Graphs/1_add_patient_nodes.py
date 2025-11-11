@@ -1,0 +1,71 @@
+import pandas as pd
+from neo4j import GraphDatabase
+import logging
+import os
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+def add_patient_nodes():
+    # Neo4j connection settings
+    URI = "neo4j://127.0.0.1:7687"
+    AUTH = ("neo4j", "admin123")
+    DATABASE = "clinicalknowledgegraph"
+    
+    # Path to patient CSV file (relative to script location)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.join(script_dir, '..', '..')
+    PATIENTS_CSV = os.path.join(project_root, 'Filtered_Data', 'hosp', 'patients.csv')
+    
+    # Connect to Neo4j
+    driver = GraphDatabase.driver(URI, auth=AUTH, database=DATABASE)
+    
+    try:
+        # Test connection
+        with driver.session() as session:
+            result = session.run("RETURN 1 as test")
+            logger.info(f"Connection successful!")
+        
+        # Load patient data
+        df = pd.read_csv(PATIENTS_CSV)
+        logger.info(f"Found {len(df)} patient records")
+        
+        # Create patient nodes
+        with driver.session() as session:
+            for _, row in df.iterrows():
+                query = """
+                MERGE (p:Patient {subject_id: $subject_id})
+                ON CREATE SET 
+                    p.name = 'Patient',
+                    p.gender = $gender,
+                    p.anchor_age = $anchor_age,
+                    p.anchor_year = $anchor_year,
+                    p.anchor_year_group = $anchor_year_group,
+                    p.dod = $dod
+                ON MATCH SET
+                    p.name = 'Patient'
+                """
+                
+                # Handle null values
+                dod = row['dod'] if pd.notna(row['dod']) else None
+                
+                session.run(query, 
+                           subject_id=int(row['subject_id']),
+                           gender=row['gender'],
+                           anchor_age=int(row['anchor_age']),
+                           anchor_year=int(row['anchor_year']),
+                           anchor_year_group=row['anchor_year_group'],
+                           dod=dod)
+                
+                logger.info(f"Created patient node for subject_id: {row['subject_id']}")
+        
+        logger.info("Patient nodes created successfully!")
+        
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+    finally:
+        driver.close()
+
+if __name__ == "__main__":
+    add_patient_nodes()

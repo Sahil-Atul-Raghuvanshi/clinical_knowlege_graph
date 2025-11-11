@@ -1,5 +1,0 @@
-subject_id,stay_id,temperature,heartrate,resprate,o2sat,sbp,dbp,pain,acuity,chiefcomplaint
-10016742,33065303,96.8,98.0,16.0,100.0,147.0,89.0,unable,2.0,"Transfer, Abnormal EKG"
-10016742,33211001,,,,,,,,,PICC EVAL
-10016742,33335871,96.0,84.0,20.0,98.0,124.0,80.0,UA,2.0,"Dyspnea, Transfer"
-10016742,36180820,,100.0,20.0,95.0,190.0,100.0,0,1.0,"Transfer, Dyspnea"

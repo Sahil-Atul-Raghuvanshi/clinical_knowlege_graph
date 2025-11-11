@@ -1,6 +1,8 @@
 # Ignore data directories
 Filtered_Data/
 Complete_Data/
+bin/
+checkpoints/
 
 # Python
 __pycache__/

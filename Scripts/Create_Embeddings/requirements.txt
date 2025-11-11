@@ -1,0 +1,16 @@
+# Core dependencies
+neo4j>=5.0.0
+pymilvus>=2.3.0
+sentence-transformers>=2.2.0
+numpy>=1.24.0
+tqdm>=4.65.0
+
+# Optional: OpenAI embeddings
+openai>=1.0.0
+
+# Optional: Google Gemini embeddings
+google-generativeai>=0.3.0
+
+# Utilities
+python-dotenv>=1.0.0
+

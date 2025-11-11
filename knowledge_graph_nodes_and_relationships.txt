@@ -1,0 +1,148 @@
+KNOWLEDGE GRAPH NODES AND RELATIONSHIPS
+==========================================
+
+NODES:
+------
+1. Patient
+2. EmergencyDepartment
+3. UnitAdmission
+4. ICUStay
+5. HospitalAdmission
+6. Discharge
+7. PreviousPrescriptionMeds
+8. AdministeredMeds
+9. InitialAssessment
+10. Diagnosis
+11. ProceduresBatch
+12. Procedures
+13. PrescriptionsBatch
+14. Prescription
+15. LabEvents
+16. LabEvent
+17. MicrobiologyEvent
+18. ChartEventBatch
+19. ChartEvent
+20. DRG
+21. Provider
+22. PatientPastHistory
+23. HPISummary
+24. AdmissionVitals
+25. AdmissionLabs
+26. AdmissionMedications
+27. DischargeClinicalNote
+28. DischargeVitals
+29. DischargeLabs
+30. DischargeMedications
+31. MedicationStarted
+32. MedicationStopped
+33. MedicationToAvoid
+34. AllergyIdentified
+
+
+RELATIONSHIPS:
+==============
+
+Patient --- VISITED_ED ---> EmergencyDepartment
+
+NOTE: Patient nodes are linked to HospitalAdmission and Discharge nodes via subject_id property (no explicit relationship edge)
+
+EmergencyDepartment --- LED_TO_ADMISSION ---> HospitalAdmission
+
+EmergencyDepartment --- LED_TO_ADMISSION_DURING_STAY ---> HospitalAdmission
+
+EmergencyDepartment --- LED_TO_ADMISSION_AFTER_DISCHARGE ---> HospitalAdmission
+
+EmergencyDepartment --- RECORDED_PREVIOUS_MEDICATIONS ---> PreviousPrescriptionMeds
+
+EmergencyDepartment --- ADMINISTERED_MEDICATIONS ---> AdministeredMeds
+
+EmergencyDepartment --- INCLUDED_TRIAGE_ASSESSMENT ---> InitialAssessment
+
+EmergencyDepartment --- RECORDED_DIAGNOSES ---> Diagnosis
+
+EmergencyDepartment --- INCLUDED_PROCEDURES ---> ProceduresBatch
+
+EmergencyDepartment --- INCLUDED_LAB_EVENTS ---> LabEvents
+
+EmergencyDepartment --- ISSUED_PRESCRIPTIONS ---> PrescriptionsBatch
+
+UnitAdmission --- INCLUDED_PROCEDURES ---> ProceduresBatch
+
+UnitAdmission --- INCLUDED_LAB_EVENTS ---> LabEvents
+
+UnitAdmission --- ISSUED_PRESCRIPTIONS ---> PrescriptionsBatch
+
+UnitAdmission --- LED_TO_DISCHARGE ---> Discharge
+
+UnitAdmission --- LED_TO_UNIT_ADMISSION ---> UnitAdmission
+
+UnitAdmission --- LED_TO_ED ---> EmergencyDepartment
+
+ICUStay --- INCLUDED_PROCEDURES ---> ProceduresBatch
+
+ICUStay --- INCLUDED_LAB_EVENTS ---> LabEvents
+
+ICUStay --- ISSUED_PRESCRIPTIONS ---> PrescriptionsBatch
+
+ICUStay --- RECORDED_CHART_EVENTS ---> ChartEventBatch
+
+HospitalAdmission --- INCLUDED_PROCEDURES ---> ProceduresBatch
+
+HospitalAdmission --- INCLUDED_LAB_EVENTS ---> LabEvents
+
+HospitalAdmission --- ISSUED_PRESCRIPTIONS ---> PrescriptionsBatch
+
+HospitalAdmission --- WAS_ASSIGNED_DRG_CODE ---> DRG
+
+HospitalAdmission --- INCLUDED_PAST_HISTORY ---> PatientPastHistory
+
+HospitalAdmission --- INCLUDED_HPI_SUMMARY ---> HPISummary
+
+HospitalAdmission --- RECORDED_VITALS ---> AdmissionVitals
+
+HospitalAdmission --- INCLUDED_LAB_RESULTS ---> AdmissionLabs
+
+HospitalAdmission --- INCLUDED_MEDICATIONS ---> AdmissionMedications
+
+Discharge --- RECORDED_DIAGNOSES ---> Diagnosis
+
+Discharge --- DOCUMENTED_IN_NOTE ---> DischargeClinicalNote
+
+Discharge --- HAS_ALLERGY ---> AllergyIdentified
+
+Discharge --- STARTED_MEDICATIONS ---> MedicationStarted
+
+Discharge --- STOPPED_MEDICATIONS ---> MedicationStopped
+
+Discharge --- LISTED_MEDICATIONS_TO_AVOID ---> MedicationToAvoid
+
+Discharge --- LED_TO_ED_VISIT ---> EmergencyDepartment
+
+Discharge --- LED_TO_DISCHARGE ---> Discharge
+
+Provider --- MANAGED_ADMISSION ---> HospitalAdmission
+
+ProceduresBatch --- CONTAINED_PROCEDURE ---> Procedures
+
+PrescriptionsBatch --- CONTAINED_PRESCRIPTION ---> Prescription
+
+LabEvents --- CONTAINED_LAB_EVENT ---> LabEvent
+
+LabEvents --- CONTAINED_MICROBIOLOGY_EVENT ---> MicrobiologyEvent
+
+ChartEventBatch --- CONTAINED_CHART_EVENT ---> ChartEvent
+
+DischargeClinicalNote --- RECORDED_VITALS ---> DischargeVitals
+
+DischargeClinicalNote --- RECORDED_LAB_RESULTS ---> DischargeLabs
+
+DischargeClinicalNote --- RECORDED_MEDICATIONS ---> DischargeMedications
+
+
+NOTES:
+======
+- Patient nodes are linked to HospitalAdmission and Discharge nodes via subject_id property (no explicit relationship edge)
+- Event flow relationships (LED_TO_*) are created dynamically between event nodes (EmergencyDepartment, UnitAdmission, ICUStay, Discharge) based on chronological order
+- ICUStay nodes are created by converting UnitAdmission nodes, so they inherit the same relationships
+- All batch nodes (ProceduresBatch, PrescriptionsBatch, LabEvents, ChartEventBatch) serve as containers for their respective child nodes
+

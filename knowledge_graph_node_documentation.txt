@@ -1,0 +1,595 @@
+KNOWLEDGE GRAPH NODE DOCUMENTATION
+===================================
+
+This document provides detailed information about each node type in the Clinical Knowledge Graph,
+including descriptions and all attributes/properties.
+
+
+================================================================================
+1. Patient
+================================================================================
+
+Description:
+Represents a unique patient in the healthcare system. This is the central node that connects to all other clinical events and data for a patient's journey through the hospital.
+
+Attributes:
+- subject_id (Integer): Unique identifier for the patient in the database. Used to link all patient-related data.
+- name (String): Display name for the node, typically set to "Patient".
+- gender (String): Patient's gender (e.g., "M", "F").
+- anchor_age (Integer): Patient's age at the time of their first hospital admission, used as a reference point.
+- anchor_year (Integer): Reference year for the patient's data, used for temporal calculations.
+- anchor_year_group (String): Grouping of patients by year ranges for analysis purposes.
+- dod (String/Date): Date of death if the patient has died, null otherwise.
+- total_number_of_admissions (Integer): Total count of hospital admissions for this patient across all time periods.
+
+
+================================================================================
+2. EmergencyDepartment
+================================================================================
+
+Description:
+Represents a visit to the Emergency Department (ED). This node captures the patient's entry point into the hospital system, including triage information and initial assessments.
+
+Attributes:
+- event_id (String): Unique identifier for this ED visit, typically matches stay_id from edstays.csv or transfer_id from transfers.csv.
+- name (String): Display name, typically set to "Emergency Department".
+- subject_id (Integer): Links to the Patient node via subject_id.
+- hadm_id (Integer): Hospital admission ID if this ED visit led to an admission, null for standalone ED visits.
+- intime (String/DateTime): Timestamp when the patient arrived at the Emergency Department.
+- outtime (String/DateTime): Timestamp when the patient left the Emergency Department.
+- period (String): Human-readable duration of the ED stay (e.g., "2 days 3 hours 15 minutes").
+- disposition (String): Patient's disposition after ED visit (e.g., "ADMIT", "DISCHARGE", "TRANSFER").
+- arrival_transport (String): Method of arrival to the ED (e.g., "AMBULANCE", "WALK-IN").
+- ed_seq_num (Integer): Sequential number of this ED visit for the patient (1st, 2nd, 3rd visit, etc.).
+
+
+================================================================================
+3. UnitAdmission
+================================================================================
+
+Description:
+Represents admission to a hospital unit or ward (non-ICU). This node tracks patient transfers between different care units during their hospital stay.
+
+Attributes:
+- event_id (String): Unique identifier for this unit admission, typically matches transfer_id from transfers.csv.
+- name (String): Display name, typically set to the care unit name (e.g., "MEDICAL", "SURGICAL").
+- subject_id (Integer): Links to the Patient node via subject_id.
+- hadm_id (Integer): Hospital admission ID that this unit admission belongs to.
+- transfer_id (Integer): Original transfer ID from the transfers.csv file.
+- eventtype (String): Type of event (e.g., "admit", "transfer").
+- careunit (String): Name of the care unit where the patient was admitted (e.g., "MEDICAL", "SURGICAL", "CCU").
+- intime (String/DateTime): Timestamp when the patient entered this unit.
+- outtime (String/DateTime): Timestamp when the patient left this unit.
+- period (String): Human-readable duration of the unit stay.
+- service_given (String): Medical service provided during this unit admission (e.g., "MED", "SURG").
+
+
+================================================================================
+4. ICUStay
+================================================================================
+
+Description:
+Represents a stay in the Intensive Care Unit (ICU). These nodes are created by converting UnitAdmission nodes that correspond to ICU stays, inheriting all relationships and adding ICU-specific properties.
+
+Attributes:
+- event_id (String): Unique identifier for this ICU stay, typically matches stay_id from icustays.csv.
+- name (String): Display name, typically set to "ICUStay".
+- subject_id (Integer): Links to the Patient node via subject_id.
+- hadm_id (Integer): Hospital admission ID that this ICU stay belongs to.
+- transfer_id (Integer): Original transfer ID from the transfers.csv file.
+- eventtype (String): Type of event, typically "admit" for ICU stays.
+- careunit (String): Name of the ICU care unit.
+- intime (String/DateTime): Timestamp when the patient entered the ICU.
+- outtime (String/DateTime): Timestamp when the patient left the ICU.
+- period (String): Human-readable duration of the ICU stay.
+- service_given (String): Medical service provided during this ICU stay.
+- first_careunit (String): First ICU care unit the patient was admitted to during this stay.
+- last_careunit (String): Last ICU care unit the patient was in before leaving the ICU.
+- los (Float): Length of stay in the ICU, measured in days.
+
+
+================================================================================
+5. HospitalAdmission
+================================================================================
+
+Description:
+Represents a complete hospital admission episode. This is a high-level node that encompasses the entire hospital stay from admission to discharge, linking to all related clinical events and data.
+
+Attributes:
+- hadm_id (Integer): Unique identifier for this hospital admission.
+- name (String): Display name, typically set to "HospitalAdmission".
+- subject_id (Integer): Links to the Patient node via subject_id.
+- admittime (String/DateTime): Timestamp when the patient was admitted to the hospital.
+- dischtime (String/DateTime): Timestamp when the patient was discharged from the hospital.
+- deathtime (String/DateTime): Timestamp of death if the patient died during this admission, null otherwise.
+- admission_type (String): Type of admission (e.g., "EMERGENCY", "ELECTIVE", "URGENT").
+- admit_provider_id (String): Identifier for the healthcare provider who admitted the patient.
+- admission_location (String): Location from which the patient was admitted (e.g., "EMERGENCY ROOM", "PHYSICIAN REFERRAL").
+- discharge_location (String): Location where the patient was discharged to (e.g., "HOME", "SKILLED NURSING FACILITY").
+- insurance (String): Patient's insurance type (e.g., "Medicare", "Medicaid", "Private").
+- language (String): Patient's primary language.
+- marital_status (String): Patient's marital status.
+- race (String): Patient's race/ethnicity.
+- edregtime (String/DateTime): Timestamp when the patient registered in the Emergency Department before admission.
+- edouttime (String/DateTime): Timestamp when the patient left the Emergency Department before admission.
+- hospital_expire_flag (Integer): Flag indicating if the patient died during this admission (1 = died, 0 = survived).
+- hospital_admission_sequence_number (Integer): Sequential number of this admission for the patient (1st, 2nd, 3rd admission, etc.).
+- note_id (String): Identifier linking to clinical notes associated with this admission.
+- service (String): Medical service provided during this admission (e.g., "MED", "SURG").
+- chief_complaint (String): Primary reason for the hospital admission as documented in clinical notes.
+- social_history (String): Patient's social history information from clinical notes.
+- family_history (String): Patient's family medical history from clinical notes.
+
+
+================================================================================
+6. Discharge
+================================================================================
+
+Description:
+Represents the discharge event from the hospital. This node captures discharge-related information including diagnoses, medications, and clinical notes.
+
+Attributes:
+- event_id (String): Unique identifier for this discharge event, typically matches transfer_id from transfers.csv.
+- name (String): Display name, typically set to "Discharge".
+- subject_id (Integer): Links to the Patient node via subject_id.
+- hadm_id (Integer): Hospital admission ID that this discharge belongs to.
+- transfer_id (Integer): Original transfer ID from the transfers.csv file.
+- eventtype (String): Type of event, typically "discharge".
+- intime (String/DateTime): Timestamp when the discharge occurred (same as dischtime from HospitalAdmission).
+- outtime (String/DateTime): Timestamp when the patient left the hospital.
+- period (String): Human-readable duration if applicable.
+- note_id (String): Identifier linking to discharge clinical notes.
+- disposition (String): Patient's disposition after discharge (e.g., "HOME", "SKILLED NURSING FACILITY").
+- facility_name (String): Name of the facility the patient was discharged to.
+- allergies (String): List of allergies documented at discharge.
+- major_procedure (String): Major procedures performed during the hospital stay as documented in discharge notes.
+
+
+================================================================================
+7. PreviousPrescriptionMeds
+================================================================================
+
+Description:
+Represents medications that the patient was taking before their Emergency Department visit. This information is typically collected during medication reconciliation in the ED.
+
+Attributes:
+- stay_id (String): Links to the EmergencyDepartment node via event_id.
+- name (String): Display name, typically set to "PreviousPrescriptionMeds".
+- medications (Array of Strings): List of previous medications formatted as "Medication Name - ETC Description".
+- medication_count (Integer): Total number of previous medications documented.
+- charttime (String/DateTime): Timestamp when the medication reconciliation was performed.
+
+
+================================================================================
+8. AdministeredMeds
+================================================================================
+
+Description:
+Represents medications that were administered to the patient during their Emergency Department visit. These are medications given directly in the ED, not prescriptions for later use.
+
+Attributes:
+- stay_id (String): Links to the EmergencyDepartment node via event_id.
+- name (String): Display name, typically set to "AdministeredMeds".
+- medications (Array of Strings): List of medication names that were administered in the ED.
+- medication_count (Integer): Total number of medications administered.
+- charttime (String/DateTime): Timestamp when the medications were administered.
+
+
+================================================================================
+9. InitialAssessment
+================================================================================
+
+Description:
+Represents the initial triage assessment performed when the patient arrives at the Emergency Department. This includes vital signs and chief complaint.
+
+Attributes:
+- stay_id (String): Links to the EmergencyDepartment node via event_id.
+- name (String): Display name, typically set to "InitialAssessment".
+- temperature (Float): Patient's body temperature in degrees (Fahrenheit or Celsius).
+- heartrate (Float): Patient's heart rate in beats per minute.
+- resprate (Float): Patient's respiratory rate in breaths per minute.
+- o2sat (Float): Patient's oxygen saturation percentage.
+- sbp (Float): Systolic blood pressure in mmHg.
+- dbp (Float): Diastolic blood pressure in mmHg.
+- pain (String): Patient's reported pain level or description.
+- acuity (Float): Triage acuity score indicating the severity/urgency of the patient's condition.
+- chiefcomplaint (String): Patient's primary complaint or reason for the ED visit.
+
+
+================================================================================
+10. Diagnosis
+================================================================================
+
+Description:
+Represents diagnoses assigned to the patient. This can include ED diagnoses, primary diagnoses, and secondary diagnoses from both the ED visit and hospital admission.
+
+Attributes:
+- event_id (String): Links to EmergencyDepartment (for ED diagnoses) or Discharge (for hospital diagnoses) via event_id.
+- hadm_id (Integer): Hospital admission ID that this diagnosis belongs to.
+- subject_id (Integer): Links to the Patient node via subject_id.
+- name (String): Display name, typically set to "Diagnosis".
+- ed_diagnosis (Boolean): Flag indicating if this is an Emergency Department diagnosis (true) or hospital admission diagnosis (false/null).
+- complete_diagnosis (Array of Strings): List of all diagnosis titles/descriptions for this event, typically ICD codes with descriptions.
+- diagnosis_count (Integer): Total number of diagnoses in the complete_diagnosis array.
+- primary_diagnoses (Array of Strings): List of primary diagnoses extracted from clinical notes.
+- primary_count (Integer): Number of primary diagnoses.
+- secondary_diagnoses (Array of Strings): List of secondary diagnoses extracted from clinical notes.
+- secondary_count (Integer): Number of secondary diagnoses.
+
+
+================================================================================
+11. ProceduresBatch
+================================================================================
+
+Description:
+Container node that groups all procedures performed during a specific event (ED visit, unit admission, ICU stay, or hospital admission). Acts as an intermediary between event nodes and individual procedure nodes.
+
+Attributes:
+- event_id (String): Links to EmergencyDepartment, UnitAdmission, ICUStay, or HospitalAdmission via event_id.
+- hadm_id (Integer): Hospital admission ID that these procedures belong to.
+- subject_id (Integer): Links to the Patient node via subject_id.
+- name (String): Display name, typically set to "Procedures".
+
+
+================================================================================
+12. Procedures
+================================================================================
+
+Description:
+Represents a group of procedures performed at a specific time point. Contains an array of procedure descriptions that were performed together.
+
+Attributes:
+- event_id (String): Links to the ProceduresBatch node via event_id.
+- time (String/DateTime): Timestamp when these procedures were performed.
+- name (String): Display name, typically set to "Procedures".
+- procedures (Array of Strings): List of procedure descriptions, formatted with procedure names, descriptions, values, and reference ranges where applicable.
+- procedure_count (Integer): Number of procedures in the procedures array.
+- source (String): Source of the procedure data (e.g., "ICD" for ICD procedure codes, "ICU_EVENTS" for ICU procedure events).
+
+
+================================================================================
+13. PrescriptionsBatch
+================================================================================
+
+Description:
+Container node that groups all prescriptions issued during a specific event (ED visit, unit admission, ICU stay, or hospital admission). Acts as an intermediary between event nodes and individual prescription nodes.
+
+Attributes:
+- event_id (String): Links to EmergencyDepartment, UnitAdmission, ICUStay, or HospitalAdmission via event_id.
+- name (String): Display name, typically set to "PrescriptionsBatch".
+
+
+================================================================================
+14. Prescription
+================================================================================
+
+Description:
+Represents a prescription order issued at a specific time point. Contains an array of medications that were prescribed together at the same start time.
+
+Attributes:
+- event_id (String): Links to the PrescriptionsBatch node via event_id.
+- starttime (String/DateTime): Timestamp when this prescription was ordered/started.
+- name (String): Display name, typically set to "Prescription".
+- medicines (Array of Strings): List of medications formatted as "drug dose_val_rx dose_unit_rx route doses_per_24_hrs" (e.g., "GuaiFENesin 5-10 mL PO/NG 6x/day").
+- medicine_count (Integer): Number of medications in the medicines array.
+
+
+================================================================================
+15. LabEvents
+================================================================================
+
+Description:
+Container node that groups all laboratory events for a specific event (ED visit, unit admission, ICU stay, or hospital admission). Acts as an intermediary between event nodes and individual lab event nodes.
+
+Attributes:
+- event_id (String): Links to EmergencyDepartment, UnitAdmission, ICUStay, or HospitalAdmission via event_id.
+- hadm_id (Integer): Hospital admission ID that these lab events belong to.
+- subject_id (Integer): Links to the Patient node via subject_id.
+- name (String): Display name, typically set to "LabEvents".
+- charttime (String/DateTime): Timestamp used when hadm_id is null, for identifying the LabEvents node.
+
+
+================================================================================
+16. LabEvent
+================================================================================
+
+Description:
+Represents laboratory test results collected at a specific time point. Contains an array of formatted lab results with values, units, reference ranges, and flags.
+
+Attributes:
+- event_id (String): Links to the LabEvents node via event_id.
+- hadm_id (Integer): Hospital admission ID that this lab event belongs to.
+- subject_id (Integer): Links to the Patient node via subject_id.
+- charttime (String/DateTime): Timestamp when these lab tests were performed.
+- name (String): Display name, typically set to "LabEvent".
+- lab_results (Array of Strings): List of lab results formatted as "item_label=valuenum+valueuom (ref: lower-upper) [flag] fluid, category".
+- lab_count (Integer): Total number of lab results in the lab_results array.
+- abnormal_results (Array of Strings): Subset of lab_results that fall outside the normal reference range.
+- abnormal_count (Integer): Number of abnormal results.
+
+
+================================================================================
+17. MicrobiologyEvent
+================================================================================
+
+Description:
+Represents microbiology test results (cultures, sensitivities, organism identification) collected at a specific time point. These are specialized lab tests for identifying infections.
+
+Attributes:
+- event_id (String): Links to the LabEvents node via event_id (microbiology events are contained within LabEvents).
+- hadm_id (Integer): Hospital admission ID that this microbiology event belongs to (may be null for some events).
+- subject_id (Integer): Links to the Patient node via subject_id.
+- micro_specimen_id (Integer): Unique identifier for the microbiology specimen.
+- charttime (String/DateTime): Timestamp when this microbiology test was performed.
+- name (String): Display name, typically set to "MicrobiologyEvent".
+- micro_results (Array of Strings): List of microbiology results formatted as "spec_type_desc: test_name → org_name | ab_name=dilution_value(interpretation)".
+- micro_count (Integer): Number of microbiology results in the micro_results array.
+
+
+================================================================================
+18. ChartEventBatch
+================================================================================
+
+Description:
+Container node that groups all chart events (vital signs, measurements, observations) recorded during an ICU stay. Only created for ICUStay nodes, not for other event types.
+
+Attributes:
+- event_id (String): Links to the ICUStay node via event_id.
+- hadm_id (Integer): Hospital admission ID that these chart events belong to.
+- subject_id (Integer): Links to the Patient node via subject_id.
+- name (String): Display name, typically set to "ChartEvents".
+
+
+================================================================================
+19. ChartEvent
+================================================================================
+
+Description:
+Represents chart measurements (vital signs, clinical observations) recorded at a specific time point during an ICU stay. These include continuous monitoring data like heart rate, blood pressure, temperature, etc.
+
+Attributes:
+- event_id (String): Links to the ChartEventBatch node via event_id.
+- hadm_id (Integer): Hospital admission ID that this chart event belongs to.
+- subject_id (Integer): Links to the Patient node via subject_id.
+- charttime (String/DateTime): Timestamp when these chart measurements were recorded.
+- name (String): Display name, typically set to "ChartEvent".
+- chart_measurements (Array of Strings): List of measurements formatted as "label with value valuenum+valueuom (normal range: lownormal-highnormal)".
+- measurement_count (Integer): Number of measurements in the chart_measurements array.
+
+
+================================================================================
+20. DRG
+================================================================================
+
+Description:
+Represents a Diagnosis-Related Group (DRG) code assigned to a hospital admission. DRG codes are used for billing and classification purposes, grouping similar cases together.
+
+Attributes:
+- drg_id (String): Unique identifier for this DRG node, typically formatted as "hadm_id_drg_type_drg_code".
+- name (String): Display name, typically set to "HCFA_DRG" or "APR_DRG" based on drg_type.
+- hadm_id (Integer): Hospital admission ID that this DRG code belongs to.
+- drg_type (String): Type of DRG system used (e.g., "HCFA", "APR").
+- drg_code (String): The actual DRG code number.
+- description (String): Human-readable description of what this DRG code represents.
+- drg_severity (Float): Severity score associated with this DRG code, if available.
+- drg_mortality (Float): Mortality risk score associated with this DRG code, if available.
+
+
+================================================================================
+21. Provider
+================================================================================
+
+Description:
+Represents a healthcare provider (physician) who managed a hospital admission. Provider nodes are scoped per patient to maintain isolated knowledge graphs.
+
+Attributes:
+- provider_id (String): Unique identifier for this provider, scoped to a specific patient (composite key with subject_id).
+- subject_id (Integer): Links to the Patient node via subject_id. Part of the composite key with provider_id.
+- name (String): Display name, typically set to "Provider".
+- original_provider_id (String): The original provider ID from the admissions data before patient scoping.
+- created_at (DateTime): Timestamp when this provider node was created.
+
+
+================================================================================
+22. PatientPastHistory
+================================================================================
+
+Description:
+Represents the patient's past medical history, social history, and family history as documented during a hospital admission. This information provides context for the current admission.
+
+Attributes:
+- hadm_id (Integer): Links to the HospitalAdmission node via hadm_id.
+- name (String): Display name, typically set to "PatientPastHistory".
+- past_medical_history (String): Patient's past medical conditions and history of illnesses.
+- social_history (String): Patient's social history including lifestyle factors, occupation, etc.
+- family_history (String): Patient's family medical history including hereditary conditions.
+
+
+================================================================================
+23. HPISummary
+================================================================================
+
+Description:
+Represents the History of Present Illness (HPI) summary extracted from clinical notes. The HPI provides a narrative description of the current illness or reason for admission.
+
+Attributes:
+- hadm_id (Integer): Links to the HospitalAdmission node via hadm_id.
+- name (String): Display name, typically set to "HPISummary".
+- note_id (String): Identifier linking to the clinical note from which this HPI was extracted.
+- summary (String): The full text of the History of Present Illness summary.
+
+
+================================================================================
+24. AdmissionVitals
+================================================================================
+
+Description:
+Represents vital signs recorded at the time of hospital admission. These are parsed from clinical notes and stored as individual properties for each vital sign type.
+
+Attributes:
+- vitals_id (String): Unique identifier for this vitals node, typically formatted as "hadm_id_admission_vitals".
+- hadm_id (Integer): Links to the HospitalAdmission node via hadm_id.
+- name (String): Display name, typically set to "AdmissionVitals".
+- [Dynamic Properties]: Additional properties are dynamically added based on the vitals data, such as Temperature, Heart_Rate, Blood_Pressure, etc. Property names are derived from the vitals string with spaces replaced by underscores.
+
+
+================================================================================
+25. AdmissionLabs
+================================================================================
+
+Description:
+Represents laboratory test results documented at the time of hospital admission. These are extracted from clinical notes and stored as an array of lab test strings.
+
+Attributes:
+- labs_id (String): Unique identifier for this labs node, typically formatted as "hadm_id_admission_labs".
+- hadm_id (Integer): Links to the HospitalAdmission node via hadm_id.
+- name (String): Display name, typically set to "AdmissionLabs".
+- lab_tests (Array of Strings): List of lab test results formatted as "Test Name: Value" (e.g., "WBC: 17.1", "Hemoglobin: 13.6").
+
+
+================================================================================
+26. AdmissionMedications
+================================================================================
+
+Description:
+Represents medications the patient was taking at the time of hospital admission. These are extracted from clinical notes and stored as an array of medication strings.
+
+Attributes:
+- medications_id (String): Unique identifier for this medications node, typically formatted as "hadm_id_admission_medications".
+- hadm_id (Integer): Links to the HospitalAdmission node via hadm_id.
+- name (String): Display name, typically set to "AdmissionMedications".
+- medications (Array of Strings): List of medications with dosages and frequencies (e.g., "Aspirin 81 mg daily", "Atorvastatin 80 mg QPM").
+
+
+================================================================================
+27. DischargeClinicalNote
+================================================================================
+
+Description:
+Represents the discharge clinical note that documents the patient's hospital stay, including hospital course, procedures, medications, and discharge instructions.
+
+Attributes:
+- note_id (String): Unique identifier for this clinical note.
+- hadm_id (Integer): Links to the Discharge node via hadm_id.
+- subject_id (Integer): Links to the Patient node via subject_id.
+- name (String): Display name, typically set to "DischargeClinicalNote".
+- mental_status (String): Patient's mental status at discharge.
+- level_of_consciousness (String): Patient's level of consciousness at discharge.
+- activity_status (String): Patient's activity level and mobility status at discharge.
+- discharge_instructions (String): Instructions given to the patient upon discharge.
+- disposition (String): Patient's disposition after discharge (e.g., "HOME", "SKILLED NURSING FACILITY").
+- hospital_course (String): Narrative description of what happened during the hospital stay.
+- imaging_count (Integer): Number of imaging studies performed during the stay.
+- imaging_studies (String): Description of imaging studies performed.
+- major_procedure (String): Description of major procedures performed during the stay.
+- microbiology_findings (String): Summary of microbiology test results and findings.
+- antibiotic_plan (String): Antibiotic treatment plan for the patient.
+- code_status (String): Patient's code status (e.g., "Full Code", "DNR").
+- facility_name (String): Name of the facility the patient was discharged to.
+- primary_diagnoses (String): Primary diagnoses as documented in the discharge note.
+- secondary_diagnoses (String): Secondary diagnoses as documented in the discharge note.
+
+
+================================================================================
+28. DischargeVitals
+================================================================================
+
+Description:
+Represents vital signs recorded at the time of hospital discharge. These are parsed from clinical notes and stored as individual properties for each vital sign type.
+
+Attributes:
+- vitals_id (String): Unique identifier for this vitals node, typically formatted as "note_id_discharge_vitals".
+- note_id (String): Links to the DischargeClinicalNote node via note_id.
+- name (String): Display name, typically set to "DischargeVitals".
+- [Dynamic Properties]: Additional properties are dynamically added based on the vitals data, such as Temperature, Heart_Rate, Blood_Pressure, etc. Property names are derived from the vitals string with spaces replaced by underscores.
+
+
+================================================================================
+29. DischargeLabs
+================================================================================
+
+Description:
+Represents laboratory test results documented at the time of hospital discharge. These are extracted from clinical notes and stored as an array of lab test strings.
+
+Attributes:
+- labs_id (String): Unique identifier for this labs node, typically formatted as "note_id_discharge_labs".
+- note_id (String): Links to the DischargeClinicalNote node via note_id.
+- name (String): Display name, typically set to "DischargeLabs".
+- lab_tests (Array of Strings): List of lab test results formatted as "Test Name: Value" (e.g., "WBC: 8.5", "Hemoglobin: 12.3").
+
+
+================================================================================
+30. DischargeMedications
+================================================================================
+
+Description:
+Represents medications prescribed to the patient at the time of hospital discharge. These are extracted from clinical notes and stored as an array of medication strings.
+
+Attributes:
+- medications_id (String): Unique identifier for this medications node, typically formatted as "note_id_discharge_medications".
+- note_id (String): Links to the DischargeClinicalNote node via note_id.
+- name (String): Display name, typically set to "DischargeMedications".
+- medications (Array of Strings): List of medications with dosages and frequencies prescribed at discharge.
+
+
+================================================================================
+31. MedicationStarted
+================================================================================
+
+Description:
+Represents medications that were started during the hospital stay. These are medications that the patient was not taking before admission but were initiated during the hospitalization.
+
+Attributes:
+- medications_id (String): Unique identifier for this medications node, typically formatted as "hadm_id_medications_started".
+- hadm_id (Integer): Links to the Discharge node via hadm_id.
+- name (String): Display name, typically set to "MedicationStarted".
+- medications (Array of Strings): List of medications that were started during the hospital stay, with dosages and frequencies.
+
+
+================================================================================
+32. MedicationStopped
+================================================================================
+
+Description:
+Represents medications that were stopped during the hospital stay. These are medications that the patient was taking before admission but were discontinued during the hospitalization.
+
+Attributes:
+- medications_id (String): Unique identifier for this medications node, typically formatted as "hadm_id_medications_stopped".
+- hadm_id (Integer): Links to the Discharge node via hadm_id.
+- name (String): Display name, typically set to "MedicationStopped".
+- medications (Array of Strings): List of medications that were stopped during the hospital stay.
+
+
+================================================================================
+33. MedicationToAvoid
+================================================================================
+
+Description:
+Represents medications that should be avoided by the patient, typically due to allergies or contraindications. These are documented in the discharge notes.
+
+Attributes:
+- medications_id (String): Unique identifier for this medications node, typically formatted as "hadm_id_medications_to_avoid".
+- hadm_id (Integer): Links to the Discharge node via hadm_id.
+- name (String): Display name, typically set to "MedicationToAvoid".
+- medications (Array of Strings): List of medications that should be avoided by the patient.
+
+
+================================================================================
+34. AllergyIdentified
+================================================================================
+
+Description:
+Represents an allergy that was identified and documented for the patient. These allergies are extracted from discharge clinical notes and linked to the discharge event.
+
+Attributes:
+- allergy_name (String): Name of the allergen or medication that causes the allergy. Part of the composite key with hadm_id.
+- hadm_id (Integer): Hospital admission ID that this allergy was documented during. Part of the composite key with allergy_name.
+- name (String): Display name, typically set to "AllergyIdentified".
+- note_id (String): Identifier linking to the clinical note from which this allergy was extracted.
+
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
+
+
