@@ -1,0 +1,116 @@
+{
+  "Administrative Information": {
+    "Name": "string (use null if redacted)",
+    "Unit No": "string (use null if redacted)",
+    "Admission Date": "string (ISO 8601 date or null)",
+    "Discharge Date": "string (ISO 8601 date or null)",
+    "Date of Birth": "string (ISO 8601 date or null)",
+    "Sex": "string",
+    "Service": "string",
+    "Attending": "string (use null if redacted)",
+    "Allergies": ["string"]
+  },
+  "Clinical Summary": {
+    "Chief Complaint": "string",
+    "Major Surgical or Invasive Procedure": "string or array of strings",
+    "Past Medical History": ["string"],
+    "Social History": "string",
+    "Family History": "string"
+  },
+  "History of Present Illness": {
+    "Summary": "string",
+    "ED Findings": {
+      "General": "string",
+      "Vitals": {
+        "Temperature": "number or string",
+        "Heart Rate": "number or string",
+        "Blood Pressure": "string",
+        "Respiratory Rate": "number or string",
+        "SpO2": "string"
+      },
+      "Imaging": "string",
+      "Initial Treatment": ["string"],
+      "ICU/MICU Status": "string"
+    },
+    "ED Labs": {
+      "description": "Extract key abnormal values as key-value pairs"
+    }
+  },
+  "Physical Examination": {
+    "Admission Exam": {
+      "General": "string",
+      "Vitals": "object with vital signs",
+      "HEENT": "string",
+      "Neck": "string",
+      "Lungs": "string",
+      "Cardiovascular": "string",
+      "Abdomen": "string",
+      "Extremities": "string",
+      "Skin": "string",
+      "Neuro": "string"
+    },
+    "Discharge Exam": {
+      "General": "string",
+      "Vitals": "object with vital signs",
+      "HEENT": "string",
+      "Neck": "string",
+      "Lungs": "string",
+      "Cardiovascular": "string",
+      "Abdomen": "string",
+      "Extremities": "string",
+      "Skin": "string",
+      "Neuro": "string"
+    }
+  },
+  "Pertinent Results": {
+    "Admission Labs": {
+      "description": "Key lab values as key-value pairs (e.g., WBC, Hemoglobin, Creatinine)"
+    },
+    "Discharge Labs": {
+      "description": "Key lab values as key-value pairs"
+    }
+  },
+  "Microbiology": {
+    "description": "Organized by specimen type with organisms, counts, and sensitivities"
+  },
+  "Imaging Studies": [
+    {
+      "Study Type": "string",
+      "Date": "string or null",
+      "Findings": "string"
+    }
+  ],
+  "Hospital Course": {
+    "description": "Extract each problem/diagnosis with description of management as written"
+  },
+  "Transitional Issues": {
+    "Antibiotic Plan": "string",
+    "Medication Changes": {
+      "Start": ["string"],
+      "Stop": ["string"],
+      "Avoid": ["string"]
+    },
+    "Equipment Changes": "string",
+    "Follow-up Labs": "string",
+    "Pending Tests": ["string"],
+    "Code Status": "string",
+    "Legal Guardian": "string"
+  },
+  "Medications": {
+    "On Admission": ["string (formatted as 'name dose route frequency')"],
+    "On Discharge": ["string (formatted as 'name dose route frequency')"]
+  },
+  "Discharge Information": {
+    "Disposition": "string",
+    "Facility Name": "string or null",
+    "Primary Diagnoses": ["string"],
+    "Secondary Diagnoses": ["string"],
+    "Condition": {
+      "Mental Status": "string",
+      "Level of Consciousness": "string",
+      "Activity Status": "string"
+    },
+    "Discharge Instructions": "string",
+    "Follow-up": "string or null"
+  }
+}
