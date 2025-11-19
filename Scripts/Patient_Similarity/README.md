@@ -42,10 +42,21 @@ Similar Patients Table
 
 ## Usage
 
-Run the Streamlit application:
+### Method 1: Command Line (Standard)
+Run the Streamlit application from the command line:
 
 ```bash
 streamlit run app.py
+```
+
+### Method 2: Double-Click Launcher (Windows)
+**For Windows users:** Simply double-click `launch_app.bat` to launch the app.
+
+### Method 3: Shell Script (Linux/Mac)
+Make the script executable and run it:
+```bash
+chmod +x launch_app.sh
+./launch_app.sh
 ```
 
 The app will open in your browser at `http://localhost:8501`
