@@ -404,7 +404,7 @@ def main():
     # Define file paths (relative to script location)
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.normpath(os.path.join(script_dir, '..', '..', '..'))
-    input_csv = os.path.join(project_root, 'Filtered_Data', 'note', 'discharge_clinical_note_json_logic.csv')
+    input_csv = os.path.join(project_root, 'Filtered_Data', 'note', 'discharge_clinical_note_json.csv')
     output_csv = os.path.join(project_root, 'Filtered_Data', 'note', 'discharge_clinical_note_flattened.csv')
     
     # Check if input file exists
