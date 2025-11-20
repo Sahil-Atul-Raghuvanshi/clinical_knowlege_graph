@@ -11,6 +11,65 @@ from utils.neo4j_connection import Neo4jConnection
 logger = logging.getLogger(__name__)
 
 
+def transform_kg_to_journey_format(graph_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Transform graph data from retrieve_patient_kg format to chronological journey format
+    
+    Args:
+        graph_data: Graph data from retrieve_patient_kg() with keys:
+            - patient: dict
+            - temporal_events: list (with ISO timestamp strings)
+            
+    Returns:
+        Dictionary in chronological journey format with keys:
+            - patient: dict
+            - events: list (with datetime timestamp objects)
+    """
+    from datetime import datetime
+    
+    events = []
+    
+    for temporal_event in graph_data.get('temporal_events', []):
+        # Convert ISO timestamp string back to datetime object
+        timestamp_str = temporal_event.get('timestamp', '')
+        if timestamp_str:
+            try:
+                # Parse ISO format timestamp
+                if 'T' in timestamp_str:
+                    timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                else:
+                    # Fallback to standard format
+                    timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
+            except Exception as e:
+                logger.warning(f"Could not parse timestamp {timestamp_str}: {e}")
+                continue
+        else:
+            # If no timestamp string, try to extract from properties
+            props = temporal_event.get('properties', {})
+            labels = temporal_event.get('labels', [])
+            timestamp = extract_timestamp(props, labels)
+            if not timestamp:
+                continue
+        
+        # Build event in chronological journey format
+        event = {
+            'labels': temporal_event.get('labels', []),
+            'properties': temporal_event.get('properties', {}),
+            'element_id': temporal_event.get('element_id', ''),
+            'timestamp': timestamp
+        }
+        
+        events.append(event)
+    
+    # Sort by timestamp (should already be sorted, but ensure it)
+    events.sort(key=lambda x: x['timestamp'])
+    
+    return {
+        'patient': graph_data.get('patient', {}),
+        'events': events
+    }
+
+
 def extract_timestamp(node_props: dict, labels: list) -> Optional[datetime]:
     """
     Extract the primary timestamp from a node based on its label
@@ -98,33 +157,21 @@ def retrieve_patient_kg(connection: Neo4jConnection, subject_id: str) -> Dict[st
         # Fallback to original query if APOC is not available
         print(f"APOC not available or query failed: {e}. Falling back to original query.")
         logger.warning(f"APOC not available or query failed: {e}. Falling back to original query.")
+        # Fallback query: Use simpler approach that gets all nodes directly (matching chronological_patient_journey.py)
         query_fallback = """
         MATCH (p:Patient)
         WHERE p.subject_id = $subject_id OR toString(p.subject_id) = $subject_id
         WITH p
-        OPTIONAL MATCH path = (p)-[r*1..10]->(n)
-        WHERE NOT n:DiagnosisItem 
+        OPTIONAL MATCH (p)-[*]->(n)
+        WHERE n.name IS NOT NULL
+          AND NOT n:DiagnosisItem 
           AND NOT n:MedicationItem 
           AND NOT n:LabResultItem 
           AND NOT n:MicrobiologyResultItem
-        WITH p, relationships(path) as rels, nodes(path) as nodeList
-        WHERE rels IS NOT NULL AND size(rels) > 0
-        UNWIND range(0, size(rels)-1) as idx
-        WITH p, rels[idx] as rel, nodeList[idx] as startNode, nodeList[idx+1] as endNode
-        WHERE NOT startNode:DiagnosisItem 
-          AND NOT startNode:MedicationItem 
-          AND NOT startNode:LabResultItem 
-          AND NOT startNode:MicrobiologyResultItem
-          AND NOT endNode:DiagnosisItem 
-          AND NOT endNode:MedicationItem 
-          AND NOT endNode:LabResultItem 
-          AND NOT endNode:MicrobiologyResultItem
         RETURN DISTINCT
-            labels(startNode) as start_labels,
-            properties(startNode) as start_props,
-            type(rel) as relationship_type,
-            labels(endNode) as end_labels,
-            properties(endNode) as end_props
+            labels(n) as labels,
+            properties(n) as props,
+            elementId(n) as element_id
         """
         results = connection.execute_query(query_fallback, {"subject_id": str(subject_id)})
         
@@ -152,67 +199,93 @@ def retrieve_patient_kg(connection: Neo4jConnection, subject_id: str) -> Dict[st
                 "properties": dict(patient_record['props']) if patient_record.get('props') else {}
             }
         
-        # Process relationships and nodes
+        # Process nodes from results (simpler approach matching chronological_patient_journey.py)
         for record in results:
-            start_labels = list(record['start_labels']) if record.get('start_labels') else []
-            start_props = dict(record['start_props']) if record.get('start_props') else {}
-            rel_type = record.get('relationship_type')
-            end_labels = list(record['end_labels']) if record.get('end_labels') else []
-            end_props = dict(record['end_props']) if record.get('end_props') else {}
+            if not record.get('props'):
+                continue
+                
+            labels = list(record.get('labels', []))
+            props = dict(record.get('props', {}))
+            element_id = record.get('element_id', '')
             
-            # Store nodes
-            if start_labels and start_props:
-                node_key = f"{start_labels[0]}_{start_props.get('event_id', start_props.get('name', 'unknown'))}"
-                if node_key not in graph_data["nodes"]:
-                    graph_data["nodes"][node_key] = {
-                        "labels": start_labels,
-                        "properties": start_props
-                    }
-                    
-                    # Add to temporal events if it has a timestamp
-                    timestamp = extract_timestamp(start_props, start_labels)
-                    if timestamp:
-                        graph_data["temporal_events"].append({
-                            "node_key": node_key,
-                            "labels": start_labels,
-                            "properties": start_props,
-                            "timestamp": timestamp.isoformat(),
-                            "timestamp_obj": timestamp
-                        })
+            # Skip Patient node (we already have it)
+            if 'Patient' in labels:
+                continue
             
-            if end_labels and end_props:
-                node_key = f"{end_labels[0]}_{end_props.get('event_id', end_props.get('name', 'unknown'))}"
-                if node_key not in graph_data["nodes"]:
-                    graph_data["nodes"][node_key] = {
-                        "labels": end_labels,
-                        "properties": end_props
-                    }
-                    
-                    # Add to temporal events if it has a timestamp
-                    timestamp = extract_timestamp(end_props, end_labels)
-                    if timestamp:
-                        graph_data["temporal_events"].append({
-                            "node_key": node_key,
-                            "labels": end_labels,
-                            "properties": end_props,
-                            "timestamp": timestamp.isoformat(),
-                            "timestamp_obj": timestamp
-                        })
+            # Skip item nodes (should already be filtered by query, but double-check)
+            if any(label in ['DiagnosisItem', 'MedicationItem', 'LabResultItem', 'MicrobiologyResultItem'] for label in labels):
+                continue
             
-            # Store relationship
-            if rel_type and start_labels and end_labels:
-                graph_data["relationships"].append({
-                    "from": {
-                        "label": start_labels[0] if start_labels else "Unknown",
-                        "name": start_props.get('name', start_props.get('event_id', 'unknown'))
-                    },
-                    "relationship": rel_type,
-                    "to": {
-                        "label": end_labels[0] if end_labels else "Unknown",
-                        "name": end_props.get('name', end_props.get('event_id', 'unknown')),
-                        "properties": end_props
-                    }
+            # Create unique node key (for graph structure deduplication)
+            node_id = props.get('event_id') or props.get('hadm_id') or props.get('stay_id') or props.get('name', 'unknown')
+            node_key = f"{labels[0] if labels else 'Unknown'}_{node_id}"
+            
+            # Deduplicate nodes for graph structure
+            if node_key not in graph_data["nodes"]:
+                graph_data["nodes"][node_key] = {
+                    "labels": labels,
+                    "properties": props
+                }
+            
+            # Add to temporal events if it has a timestamp (ALWAYS add, don't deduplicate)
+            timestamp = extract_timestamp(props, labels)
+            if timestamp:
+                graph_data["temporal_events"].append({
+                    "node_key": node_key,
+                    "labels": labels,
+                    "properties": props,
+                    "element_id": element_id,
+                    "timestamp": timestamp.isoformat(),
+                    "timestamp_obj": timestamp
                 })
+        
+        # Get relationships separately (if needed for graph structure)
+        relationships_query = """
+        MATCH (p:Patient)
+        WHERE p.subject_id = $subject_id OR toString(p.subject_id) = $subject_id
+        WITH p
+        MATCH path = (p)-[*]->(start)-[r]->(end)
+        WHERE NOT start:DiagnosisItem 
+          AND NOT start:MedicationItem 
+          AND NOT start:LabResultItem 
+          AND NOT start:MicrobiologyResultItem
+          AND NOT end:DiagnosisItem 
+          AND NOT end:MedicationItem 
+          AND NOT end:LabResultItem 
+          AND NOT end:MicrobiologyResultItem
+        RETURN DISTINCT
+            labels(start) as start_labels,
+            properties(start) as start_props,
+            type(r) as relationship_type,
+            labels(end) as end_labels,
+            properties(end) as end_props
+        """
+        
+        try:
+            rel_results = connection.execute_query(relationships_query, {"subject_id": str(subject_id)})
+            for record in rel_results:
+                start_labels = list(record.get('start_labels', []))
+                start_props = dict(record.get('start_props', {}))
+                rel_type = record.get('relationship_type')
+                end_labels = list(record.get('end_labels', []))
+                end_props = dict(record.get('end_props', {}))
+                
+                if rel_type and start_labels and end_labels:
+                    graph_data["relationships"].append({
+                        "from": {
+                            "label": start_labels[0] if start_labels else "Unknown",
+                            "name": start_props.get('name', start_props.get('event_id', 'unknown'))
+                        },
+                        "relationship": rel_type,
+                        "to": {
+                            "label": end_labels[0] if end_labels else "Unknown",
+                            "name": end_props.get('name', end_props.get('event_id', 'unknown')),
+                            "properties": end_props
+                        }
+                    })
+        except Exception as e:
+            logger.warning(f"Could not retrieve relationships: {e}")
+            # Relationships are optional, continue without them
         
         # Sort temporal events by timestamp
         graph_data["temporal_events"].sort(key=lambda x: x["timestamp_obj"])
@@ -265,26 +338,36 @@ def retrieve_patient_kg(connection: Neo4jConnection, subject_id: str) -> Dict[st
             if any(label in ['DiagnosisItem', 'MedicationItem', 'LabResultItem', 'MicrobiologyResultItem'] for label in labels):
                 continue
             
-            # Create unique node key
+            # Create unique node key (for graph structure deduplication)
             node_id = props.get('event_id') or props.get('hadm_id') or props.get('stay_id') or props.get('name', 'unknown')
             node_key = f"{labels[0] if labels else 'Unknown'}_{node_id}"
             
+            # Deduplicate nodes for graph structure
             if node_key not in all_nodes:
                 all_nodes[node_key] = {
                     "labels": labels,
                     "properties": props
                 }
+            
+            # Add to temporal events if it has a timestamp (ALWAYS add, don't deduplicate)
+            timestamp = extract_timestamp(props, labels)
+            if timestamp:
+                # Get element_id from node object if available (needed for child node queries)
+                element_id = ''
+                try:
+                    if hasattr(node, 'element_id'):
+                        element_id = node.element_id
+                except Exception:
+                    pass
                 
-                # Add to temporal events if it has a timestamp
-                timestamp = extract_timestamp(props, labels)
-                if timestamp:
-                    graph_data["temporal_events"].append({
-                        "node_key": node_key,
-                        "labels": labels,
-                        "properties": props,
-                        "timestamp": timestamp.isoformat(),
-                        "timestamp_obj": timestamp
-                    })
+                graph_data["temporal_events"].append({
+                    "node_key": node_key,
+                    "labels": labels,
+                    "properties": props,
+                    "element_id": element_id,
+                    "timestamp": timestamp.isoformat(),
+                    "timestamp_obj": timestamp
+                })
         
         # Process relationships
         for rel in relationships:
