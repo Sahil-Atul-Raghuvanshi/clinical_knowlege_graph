@@ -253,6 +253,22 @@ def render_summary_tab(connection: Neo4jConnection):
         st.info(f"📋 Showing previously generated summary for Patient {patient_id}")
         st.markdown("---")
         
+        # Download PDF button for cached summary (at the start)
+        try:
+            pdf_bytes = create_pdf_from_json(summary_json)
+            st.download_button(
+                label="📄 Download Summary as PDF",
+                data=pdf_bytes,
+                file_name=f"patient_{patient_id.strip()}_Summary.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+        except Exception as e:
+            logger.error(f"Error creating PDF: {e}", exc_info=True)
+            st.error(f"Error creating PDF: {str(e)}")
+        
+        st.markdown("---")
+        
         # Display the cached summary (same format as newly generated)
         # Patient Demographics
         if summary_json.get('patient_demographics'):
@@ -366,21 +382,6 @@ def render_summary_tab(connection: Neo4jConnection):
         if summary_json.get('clinical_significance'):
             st.markdown("#### ⚕️ Clinical Significance")
             st.write(summary_json['clinical_significance'])
-        
-        # Download PDF button for cached summary
-        st.markdown("---")
-        try:
-            pdf_bytes = create_pdf_from_json(summary_json)
-            st.download_button(
-                label="📄 Download Summary as PDF",
-                data=pdf_bytes,
-                file_name=f"patient_{patient_id.strip()}_Summary.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
-        except Exception as e:
-            logger.error(f"Error creating PDF: {e}", exc_info=True)
-            st.error(f"Error creating PDF: {str(e)}")
     
     if should_generate and patient_id:
         if not patient_id.strip().isdigit():
@@ -445,6 +446,22 @@ def render_summary_tab(connection: Neo4jConnection):
                 
                 # Display summary
                 st.success("✅ Summary generated successfully!")
+                st.markdown("---")
+                
+                # Download PDF button (at the start)
+                try:
+                    pdf_bytes = create_pdf_from_json(summary_json)
+                    st.download_button(
+                        label="📄 Download Summary as PDF",
+                        data=pdf_bytes,
+                        file_name=f"patient_{patient_id.strip()}_Summary.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+                except Exception as e:
+                    logger.error(f"Error creating PDF: {e}", exc_info=True)
+                    st.error(f"Error creating PDF: {str(e)}")
+                
                 st.markdown("---")
                 
                 # Patient Demographics
@@ -559,21 +576,6 @@ def render_summary_tab(connection: Neo4jConnection):
                 if summary_json.get('clinical_significance'):
                     st.markdown("#### ⚕️ Clinical Significance")
                     st.write(summary_json['clinical_significance'])
-                
-                # Download PDF button
-                st.markdown("---")
-                try:
-                    pdf_bytes = create_pdf_from_json(summary_json)
-                    st.download_button(
-                        label="📄 Download Summary as PDF",
-                        data=pdf_bytes,
-                        file_name=f"patient_{patient_id.strip()}_Summary.pdf",
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
-                except Exception as e:
-                    logger.error(f"Error creating PDF: {e}", exc_info=True)
-                    st.error(f"Error creating PDF: {str(e)}")
                 
             except Exception as e:
                 st.error(f"Error generating summary: {str(e)}")

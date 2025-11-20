@@ -207,7 +207,11 @@ def main():
     should_stay_on_summarize = query_params.get('tab') == 'summarize' or st.session_state.get('generating_summary', False)
     
     # Create tabs
-    tab1, tab2, tab3 = st.tabs(["🔍 Find Similar Patients", "📋 Summarize Patient", "📅 Patient Journey"])
+    tab1, tab2, tab3 = st.tabs([
+        "🔍 Find Similar Patients", 
+        "📋 Summarize Patient", 
+        "📅 Patient Journey"
+    ])
     
     # Inject JavaScript early to switch tab if needed (before rendering content)
     if should_stay_on_summarize:

@@ -10,7 +10,7 @@ from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 
 from utils.neo4j_connection import Neo4jConnection
-from load_data.retrieve_patient_kg import extract_timestamp
+from load_data.retrieve_patient_kg import extract_timestamp, retrieve_patient_kg, transform_kg_to_journey_format
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ def get_child_nodes(connection: Neo4jConnection, parent_node_id: str, parent_pro
 def get_patient_journey_data(connection: Neo4jConnection, subject_id: str) -> Tuple[Optional[Dict], Optional[str]]:
     """
     Get all patient journey events in chronological order using complete knowledge graph
-    Uses the same query logic as create_patient_journey_pdf.py to get all nodes with timestamps
+    Uses retrieve_patient_kg.py to get graph data, then transforms it to chronological journey format
     
     Args:
         connection: Neo4j connection object
@@ -77,76 +77,19 @@ def get_patient_journey_data(connection: Neo4jConnection, subject_id: str) -> Tu
         Tuple of (journey_data dict, error message). journey_data is None if error occurred.
     """
     try:
-        # Get patient node first
-        patient_query = """
-        MATCH (p:Patient)
-        WHERE p.subject_id = $subject_id OR toString(p.subject_id) = $subject_id
-        RETURN labels(p) as labels, properties(p) as props
-        """
+        # Use retrieve_patient_kg to get the complete graph data
+        graph_data = retrieve_patient_kg(connection, subject_id)
         
-        patient_results = connection.execute_query(patient_query, {"subject_id": str(subject_id)})
-        
-        if not patient_results:
+        # Check if patient was found
+        if not graph_data.get('patient'):
             return None, f"Patient {subject_id} not found in database"
         
-        patient_record = patient_results[0]
-        patient_labels = list(patient_record.get('labels', []))
-        patient_props = dict(patient_record.get('props', {}))
+        # Transform graph data to chronological journey format
+        journey_data = transform_kg_to_journey_format(graph_data)
         
-        # Use the same query as create_patient_journey_pdf.py to get all nodes
-        # This query gets all nodes reachable from the patient, matching the PDF generation logic
-        nodes_query = """
-        MATCH (p:Patient)
-        WHERE p.subject_id = $subject_id OR toString(p.subject_id) = $subject_id
-        WITH p
-        OPTIONAL MATCH (p)-[*]->(n)
-        WHERE n.name IS NOT NULL
-        RETURN DISTINCT labels(n) as labels, properties(n) as props, elementId(n) as element_id
-        """
+        logger.info(f"Extracted {len(journey_data.get('events', []))} temporal events for patient {subject_id}")
         
-        results = connection.execute_query(nodes_query, {"subject_id": str(subject_id)})
-        
-        # Collect and sort nodes by timestamp (matching create_patient_journey_pdf.py logic)
-        nodes_with_timestamps = []
-        
-        for record in results:
-            if not record.get('props'):
-                continue
-            
-            labels = list(record.get('labels', []))
-            props = dict(record.get('props', {}))
-            element_id = record.get('element_id', '')
-            
-            # Skip item nodes (same as create_patient_journey_pdf.py)
-            if any(label in ['DiagnosisItem', 'MedicationItem', 'LabResultItem', 'MicrobiologyResultItem'] for label in labels):
-                continue
-            
-            # Skip Patient node (we already have it)
-            if 'Patient' in labels:
-                continue
-            
-            # Extract timestamp using the same logic as create_patient_journey_pdf.py
-            timestamp = extract_timestamp(props, labels)
-            if timestamp:
-                nodes_with_timestamps.append({
-                    'labels': labels,
-                    'properties': props,
-                    'element_id': element_id,
-                    'timestamp': timestamp
-                })
-        
-        # Sort by timestamp (strict chronological order)
-        nodes_with_timestamps.sort(key=lambda x: x['timestamp'])
-        
-        logger.info(f"Extracted {len(nodes_with_timestamps)} temporal events for patient {subject_id}")
-        
-        return {
-            'patient': {
-                'labels': patient_labels,
-                'properties': patient_props
-            },
-            'events': nodes_with_timestamps
-        }, None
+        return journey_data, None
         
     except Exception as e:
         logger.error(f"Error getting patient journey data: {e}", exc_info=True)
@@ -1033,11 +976,7 @@ def render_patient_journey_tab(connection: Neo4jConnection):
         st.info(f"📋 Showing previously generated journey for Patient {patient_id}")
         st.markdown("---")
         
-        # Render the journey
-        _render_journey_events(journey_data, connection)
-        
-        # Download PDF button
-        st.markdown("---")
+        # Download PDF button (at the start)
         try:
             from features.download_patient_journey import create_journey_pdf
             pdf_bytes = create_journey_pdf(journey_data)
@@ -1051,6 +990,11 @@ def render_patient_journey_tab(connection: Neo4jConnection):
         except Exception as e:
             logger.error(f"Error creating PDF: {e}", exc_info=True)
             st.error(f"Error creating PDF: {str(e)}")
+        
+        st.markdown("---")
+        
+        # Render the journey
+        _render_journey_events(journey_data, connection)
         return
     
     # Generate journey
@@ -1090,11 +1034,7 @@ def render_patient_journey_tab(connection: Neo4jConnection):
                 st.success(f"✅ Journey report generated successfully! Found {len(journey_data['events'])} events.")
                 st.markdown("---")
                 
-                # Render the journey
-                _render_journey_events(journey_data, connection)
-                
-                # Download PDF button
-                st.markdown("---")
+                # Download PDF button (at the start)
                 try:
                     from features.download_patient_journey import create_journey_pdf
                     pdf_bytes = create_journey_pdf(journey_data)
@@ -1108,6 +1048,11 @@ def render_patient_journey_tab(connection: Neo4jConnection):
                 except Exception as e:
                     logger.error(f"Error creating PDF: {e}", exc_info=True)
                     st.error(f"Error creating PDF: {str(e)}")
+                
+                st.markdown("---")
+                
+                # Render the journey
+                _render_journey_events(journey_data, connection)
                 
             except Exception as e:
                 st.error(f"Error generating journey: {str(e)}")
