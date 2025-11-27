@@ -14,9 +14,13 @@ import numpy as np
 
 # Add Create_Embeddings directory to path for imports
 # This file is at: Scripts/Run_Pipeline/2_create_embeddings_pipeline.py
-# Need to access modules from: Scripts/Create_Embeddings/
-embeddings_path = Path(__file__).parent.parent / 'Create_Embeddings'
+# Need to access modules from: Scripts/Create_Embeddings/full_patient_embeddings/
+embeddings_path = Path(__file__).parent.parent / 'Create_Embeddings' / 'full_patient_embeddings'
 sys.path.insert(0, str(embeddings_path))
+
+# Also add parent Create_Embeddings directory for neo4j_storage
+create_embeddings_dir = Path(__file__).parent.parent / 'Create_Embeddings'
+sys.path.insert(0, str(create_embeddings_dir))
 
 # Import ETL tracker for incremental loading
 scripts_dir = Path(__file__).parent.parent  # Scripts directory
@@ -41,16 +45,20 @@ logs_dir.mkdir(parents=True, exist_ok=True)
 # Configure logging to save in logs directory
 log_file = logs_dir / f'embedding_pipeline_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
 
+# Configure logging to file only (no console output)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(log_file)
+        logging.FileHandler(log_file, encoding='utf-8')
     ]
 )
 logger = logging.getLogger(__name__)
 logger.info(f"Log file: {log_file}")
+
+# Print to console only for critical messages (progress bar will show via tqdm)
+print(f"Embedding pipeline started. Logs: {log_file}")
+print("Processing patients... (see progress bar below)")
 
 # Log ETL tracker availability
 if ETLTracker is None:
@@ -304,11 +312,16 @@ def main():
             force_patients=force_patients
         )
         
+        print("\n✓ Pipeline completed successfully!")
+        print(f"Check log file for details: {log_file}")
+        
     except KeyboardInterrupt:
         logger.info("\nPipeline interrupted by user")
         logger.info("Progress has been saved. Run again to resume.")
+        print("\n⚠ Pipeline interrupted by user. Progress saved.")
     except Exception as e:
         logger.error(f"Pipeline failed: {e}", exc_info=True)
+        print(f"\n✗ Pipeline failed. Check log file: {log_file}")
         sys.exit(1)
     finally:
         pipeline.cleanup()

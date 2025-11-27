@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 
 # Add Scripts directory to path for utils imports
-scripts_dir = Path(__file__).parent.parent
+# This file is at: Scripts/Create_Embeddings/full_patient_embeddings/enhanced_text_extractor.py
+# So parent.parent.parent is Scripts/
+scripts_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(scripts_dir))
 
 from utils.neo4j_connection import Neo4jConnection

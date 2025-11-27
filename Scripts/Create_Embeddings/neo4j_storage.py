@@ -86,6 +86,41 @@ class Neo4jEmbeddingStorage:
         logger.info(f"Stored {stored_count} patient embeddings in Neo4j")
         return stored_count
     
+    def store_single_patient_embedding(self, patient_id: str, text_embedding: np.ndarray) -> bool:
+        """
+        Store a single patient embedding in Neo4j immediately
+        
+        Args:
+            patient_id: Patient ID
+            text_embedding: Text embedding vector
+            
+        Returns:
+            True if stored successfully, False otherwise
+        """
+        try:
+            query = """
+            MATCH (p:Patient {subject_id: toInteger($patient_id)})
+            SET p.textEmbedding = $text_embedding
+            RETURN count(p) AS count
+            """
+            
+            embedding_list = text_embedding.tolist() if isinstance(text_embedding, np.ndarray) else text_embedding
+            
+            result = self.neo4j.execute_query(query, {
+                'patient_id': patient_id,
+                'text_embedding': embedding_list
+            })
+            
+            if result and result[0]['count'] > 0:
+                logger.debug(f"Stored embedding for patient {patient_id}")
+                return True
+            else:
+                logger.warning(f"Patient {patient_id} not found in Neo4j")
+                return False
+        except Exception as e:
+            logger.error(f"Error storing embedding for patient {patient_id}: {e}")
+            return False
+    
     def create_neo4j_vector_indexes(
         self,
         index_name: str,
