@@ -6,18 +6,24 @@ Supports incremental loading using ETL tracker
 import logging
 import sys
 import time
-import os
-import csv
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 import numpy as np
 from tqdm import tqdm
 
 # Add Scripts directory to path for utils imports
-# This file is at: Scripts/Create_Embeddings/embedding_pipeline.py
-# So parent.parent is Scripts/
-scripts_dir = Path(__file__).parent.parent
+# This file is at: Scripts/Create_Embeddings/full_patient_embeddings/embedding_pipeline.py
+# So parent.parent.parent is Scripts/
+scripts_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(scripts_dir))
+
+# Add parent directory (Create_Embeddings) to path for neo4j_storage import
+create_embeddings_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(create_embeddings_dir))
+
+# Add current directory to path for same-folder imports
+current_dir = Path(__file__).parent
+sys.path.insert(0, str(current_dir))
 
 from utils.config import Config
 from utils.neo4j_connection import Neo4jConnection
@@ -86,11 +92,6 @@ class PatientEmbeddingPipeline:
         
         # Initialize storage
         self.storage = Neo4jEmbeddingStorage(self.neo4j)
-        
-        # CSV file for saving extracted text and embeddings
-        project_root = Path(__file__).parent.parent.parent.parent
-        self.csv_file = project_root / 'logs' / 'patient_embeddings_data.csv'
-        self.csv_file.parent.mkdir(parents=True, exist_ok=True)
     
     def setup(self):
         """Setup connections"""
@@ -139,7 +140,7 @@ class PatientEmbeddingPipeline:
             '2_patient_flow_through_the_hospital'
         ]
         
-        # Reload tracker to ensure we have the latest data (in case CSV was updated)
+        # Reload tracker to ensure we have the latest data
         if self.tracker:
             try:
                 tracker_file = getattr(self.tracker, 'tracker_file', 'unknown')
@@ -320,52 +321,46 @@ class PatientEmbeddingPipeline:
             return
         
         logger.info(f"Processing {len(patients_to_process)} patients")
+        logger.info("Processing patients individually and storing embeddings immediately in Neo4j...")
         
-        # Step 1: Process text embeddings in batches
-        logger.info(f"\n[1/2] Processing text embeddings in batches of {batch_size}...")
-        text_embeddings = {}
-        
-        # Process in batches but show progress per patient
+        # Process patients one at a time: extract, generate, store immediately
         total_patients = len(patients_to_process)
-        with tqdm(total=total_patients, desc="Processing patients", unit="patient") as pbar:
-            for i in range(0, len(patients_to_process), batch_size):
-                batch_ids = patients_to_process[i:i + batch_size]
-                
-                # Extract text data
-                batch_text_data = self.text_extractor.batch_extract_patient_text_data(batch_ids)
-                
-                # Generate text embeddings
-                batch_text_emb = self.text_generator.generate_patient_embeddings_batch(batch_text_data)
-                text_embeddings.update(batch_text_emb)
-                
-                # Save to CSV incrementally (checks file existence fresh for each batch)
-                self._save_to_csv(batch_text_data, batch_text_emb)
-                
-                # Update progress bar by number of patients processed in this batch
-                pbar.update(len(batch_ids))
+        stored_count = 0
+        processed_patient_ids = []
         
-        # Step 2: Store in Neo4j
-        logger.info("\n[2/2] Storing patient embeddings in Neo4j...")
-        stored_count = self.storage.store_patient_embeddings(
-            text_embeddings,
-            batch_size=100
-        )
-        logger.info(f"Stored {stored_count} patient embeddings")
+        with tqdm(total=total_patients, desc="Processing patients", unit="patient", ncols=100) as pbar:
+            for patient_id in patients_to_process:
+                try:
+                    # Extract text data for single patient
+                    patient_text_data = self.text_extractor.extract_patient_text_data(patient_id)
+                    
+                    # Generate embedding for single patient
+                    patient_embedding = self.text_generator.generate_patient_text_embedding(patient_text_data)
+                    
+                    # Store immediately in Neo4j
+                    if self.storage.store_single_patient_embedding(patient_id, patient_embedding):
+                        stored_count += 1
+                        processed_patient_ids.append(int(patient_id))
+                    
+                    # Update progress bar after each patient
+                    pbar.update(1)
+                    
+                except Exception as e:
+                    logger.error(f"Error processing patient {patient_id}: {e}", exc_info=True)
+                    # Update progress bar even on error
+                    pbar.update(1)
+                    continue
         
-        # Step 3: Mark processed patients in tracker (incremental load)
-        if self.tracker and stored_count > 0:
-            # Get list of patient IDs that were successfully stored
-            processed_patient_ids = [
-                int(pid) for pid in patients_to_process
-                if pid in text_embeddings
-            ]
-            if processed_patient_ids:
-                self.tracker.mark_patients_processed_batch(
-                    processed_patient_ids,
-                    SCRIPT_NAME_PATIENT_EMBEDDINGS,
-                    status='success'
-                )
-                logger.info(f"Marked {len(processed_patient_ids)} patients as processed in tracker for '{SCRIPT_NAME_PATIENT_EMBEDDINGS}'")
+        logger.info(f"Stored {stored_count} patient embeddings in Neo4j")
+        
+        # Mark processed patients in tracker (incremental load)
+        if self.tracker and processed_patient_ids:
+            self.tracker.mark_patients_processed_batch(
+                processed_patient_ids,
+                SCRIPT_NAME_PATIENT_EMBEDDINGS,
+                status='success'
+            )
+            logger.info(f"Marked {len(processed_patient_ids)} patients as processed in tracker for '{SCRIPT_NAME_PATIENT_EMBEDDINGS}'")
         
         # Step 4: Create vector index
         logger.info("\n[3/3] Creating vector index...")
@@ -382,69 +377,6 @@ class PatientEmbeddingPipeline:
         if skipped_count > 0:
             logger.info(f"Incremental load summary: Processed {stored_count} patients, skipped {skipped_count} patients")
         logger.info("=" * 80)
-    
-    def _save_to_csv(self, text_data: Dict[str, Dict[str, Any]], embeddings: Dict[str, np.ndarray]):
-        """
-        Save extracted text and embeddings to CSV file incrementally
-        Checks for existing entries to avoid duplicates
-        File existence is checked fresh for each call to ensure true incremental saving
-        
-        Args:
-            text_data: Dictionary mapping patient_id to extracted text data
-            embeddings: Dictionary mapping patient_id to embedding vector
-        """
-        try:
-            # Check if file exists (fresh check for each batch)
-            file_exists = self.csv_file.exists()
-            
-            # Read existing patient IDs if file exists
-            existing_patient_ids = set()
-            if file_exists:
-                try:
-                    with open(self.csv_file, 'r', encoding='utf-8') as f:
-                        reader = csv.DictReader(f)
-                        if reader.fieldnames:  # Check if header exists
-                            for row in reader:
-                                if row and 'subject_id' in row:
-                                    existing_patient_ids.add(row['subject_id'])
-                except Exception as e:
-                    logger.warning(f"Could not read existing CSV: {e}. Will append.")
-                    file_exists = False  # Treat as new file if read fails
-            
-            # Open file in append mode if exists, write mode if new
-            mode = 'a' if file_exists else 'w'
-            with open(self.csv_file, mode, newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                
-                # Write header if new file
-                if not file_exists:
-                    writer.writerow(['subject_id', 'extracted_text', 'embedding'])
-                
-                # Write data for each patient (skip if already exists)
-                saved_count = 0
-                skipped_count = 0
-                for patient_id in text_data.keys():
-                    if patient_id in existing_patient_ids:
-                        skipped_count += 1
-                        logger.debug(f"Skipping patient {patient_id} - already in CSV")
-                        continue
-                    
-                    if patient_id in embeddings:
-                        # Format text
-                        formatted_text = self.text_extractor.format_text_for_embedding(text_data[patient_id])
-                        
-                        # Convert embedding to string representation
-                        embedding_str = ','.join(map(str, embeddings[patient_id].tolist()))
-                        
-                        writer.writerow([patient_id, formatted_text, embedding_str])
-                        saved_count += 1
-            
-            if saved_count > 0:
-                logger.info(f"Saved {saved_count} new patient records to CSV: {self.csv_file}")
-            if skipped_count > 0:
-                logger.debug(f"Skipped {skipped_count} patients (already in CSV)")
-        except Exception as e:
-            logger.error(f"Error saving to CSV: {e}", exc_info=True)
     
     def cleanup(self):
         """Cleanup resources"""

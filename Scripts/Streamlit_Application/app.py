@@ -11,7 +11,7 @@ from pathlib import Path
 # Add Scripts directory to path for utils imports
 # Get the absolute path to the Scripts directory
 current_file = Path(__file__).resolve()
-scripts_dir = current_file.parent.parent  # Go up from Patient_Similarity to Scripts
+scripts_dir = current_file.parent.parent  # Go up from Streamlit_Application to Scripts
 scripts_dir_str = str(scripts_dir)
 
 # Add to path if not already there
@@ -31,6 +31,7 @@ from utils.neo4j_connection import Neo4jConnection
 from features.patient_similarity import render_similarity_tab
 from features.summarize_patient import render_summary_tab
 from features.chronological_patient_journey import render_patient_journey_tab
+from features.compare_patients import render_comparison_tab
 
 # Configure logging
 logging.basicConfig(
@@ -136,7 +137,7 @@ def main():
         # Gemini API Keys configuration
         st.subheader("🔑 Gemini API Keys")
         st.info("""
-        For patient summarization, you need Gemini API keys.
+        For patient summarization and comparison, you need Gemini API keys.
         Add keys separated by commas or set GEMINI_API_KEYS environment variable.
         """)
         
@@ -182,7 +183,7 @@ def main():
         
         st.header("ℹ️ About")
         st.markdown("""
-        This application provides two features:
+        This application provides four features:
         
         **1. Find Similar Patients**
         - Uses Neo4j vector similarity search
@@ -194,7 +195,13 @@ def main():
         - Uses AI (Gemini) to generate clinical summary
         - Comprehensive 1000-word report
         
-        **3. Patient Journey**
+        **3. Compare Patients**
+        - Compares two patients' clinical journeys
+        - Uses AI (Gemini) to identify similarities and differences
+        - Includes temporal sequence analysis
+        - Comprehensive comparison report
+        
+        **4. Patient Journey**
         - Displays complete chronological patient journey
         - Shows all events in temporal order
         - Download as formatted PDF report
@@ -203,13 +210,15 @@ def main():
     # Use query parameters to track and preserve active tab
     query_params = st.query_params
     
-    # Check if we need to stay on summarize tab
+    # Check if we need to stay on summarize or compare tab
     should_stay_on_summarize = query_params.get('tab') == 'summarize' or st.session_state.get('generating_summary', False)
+    should_stay_on_compare = query_params.get('tab') == 'compare' or st.session_state.get('generating_comparison', False)
     
     # Create tabs
-    tab1, tab2, tab3 = st.tabs([
+    tab1, tab2, tab3, tab4 = st.tabs([
         "🔍 Find Similar Patients", 
-        "📋 Summarize Patient", 
+        "📋 Summarize Patient",
+        "🔬 Compare Patients",
         "📅 Patient Journey"
     ])
     
@@ -273,6 +282,65 @@ def main():
         </script>
         """, unsafe_allow_html=True)
     
+    if should_stay_on_compare:
+        st.markdown("""
+        <script>
+        (function() {
+            function switchToCompareTab() {
+                // Try multiple selectors
+                var selectors = [
+                    'button[data-baseweb="tab"]',
+                    '[role="tab"]',
+                    'button.stTabButton',
+                    '[data-testid="stTabButton"]'
+                ];
+                
+                for (var s = 0; s < selectors.length; s++) {
+                    var tabs = document.querySelectorAll(selectors[s]);
+                    if (tabs.length >= 3) {
+                        // Check if third tab is not already active
+                        var thirdTab = tabs[2];
+                        var isActive = thirdTab.classList.contains('stTabButton-active') || 
+                                      thirdTab.getAttribute('aria-selected') === 'true';
+                        if (!isActive) {
+                            thirdTab.click();
+                            return true;
+                        }
+                    }
+                }
+                
+                // Fallback: search by text
+                var allButtons = document.querySelectorAll('button');
+                for (var i = 0; i < allButtons.length; i++) {
+                    var text = (allButtons[i].textContent || allButtons[i].innerText || '').trim();
+                    if (text.includes('Compare Patients') || text.includes('🔬')) {
+                        var isActive = allButtons[i].classList.contains('stTabButton-active');
+                        if (!isActive) {
+                            allButtons[i].click();
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+            
+            // Run immediately
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', function() {
+                    setTimeout(switchToCompareTab, 50);
+                });
+            } else {
+                setTimeout(switchToCompareTab, 50);
+            }
+            
+            // Also try on window load as backup
+            window.addEventListener('load', function() {
+                setTimeout(switchToCompareTab, 100);
+            });
+        })();
+        </script>
+        """, unsafe_allow_html=True)
+    
     with tab1:
         render_similarity_tab(connection)
     
@@ -280,6 +348,9 @@ def main():
         render_summary_tab(connection)
     
     with tab3:
+        render_comparison_tab(connection)
+    
+    with tab4:
         render_patient_journey_tab(connection)
     
     # Footer
