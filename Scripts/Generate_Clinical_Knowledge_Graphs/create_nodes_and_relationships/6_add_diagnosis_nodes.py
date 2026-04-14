@@ -165,6 +165,133 @@ def add_primary_secondary_diagnoses(neo4j_conn):
         logger.error(f"Error processing primary/secondary diagnoses: {e}")
         raise
 
+def aggregate_patient_diagnoses(neo4j_conn):
+    """Aggregate all diagnoses for each patient and update Patient node with all_diagnoses attribute"""
+    logger.info("Aggregating all diagnoses for each patient...")
+    
+    try:
+        with neo4j_conn.session() as session:
+            # Get all unique patients who have Diagnosis nodes (query by subject_id on Diagnosis nodes)
+            query_patients = """
+            MATCH (diag:Diagnosis)
+            WHERE diag.subject_id IS NOT NULL
+            RETURN DISTINCT diag.subject_id AS subject_id
+            ORDER BY diag.subject_id
+            """
+            
+            result = session.run(query_patients)
+            patient_ids = [record["subject_id"] for record in result if record["subject_id"] is not None]
+            
+            logger.info(f"Found {len(patient_ids)} patients with diagnoses to process")
+            
+            if not patient_ids:
+                logger.info("No patients with diagnoses found. Skipping aggregation.")
+                return
+            
+            updated_count = 0
+            skipped_count = 0
+            total_diagnoses = 0
+            
+            pbar = tqdm(total=len(patient_ids), desc="Aggregating patient diagnoses", unit="patient")
+            
+            for subject_id in patient_ids:
+                try:
+                    # Query all Diagnosis nodes for this patient (from both Discharge and EmergencyDepartment)
+                    # Diagnosis nodes have subject_id attribute, so we can query directly
+                    query_diagnoses = """
+                    MATCH (diag:Diagnosis {subject_id: $subject_id})
+                    RETURN diag.complete_diagnosis AS complete_diagnosis,
+                           diag.primary_diagnoses AS primary_diagnoses,
+                           diag.secondary_diagnoses AS secondary_diagnoses
+                    """
+                    
+                    result = session.run(query_diagnoses, subject_id=subject_id)
+                    records = list(result)
+                    
+                    if not records:
+                        skipped_count += 1
+                        pbar.update(1)
+                        continue
+                    
+                    # Collect all diagnosis strings
+                    all_diagnoses = []
+                    
+                    for record in records:
+                        # Process complete_diagnosis (array)
+                        complete_diag = record["complete_diagnosis"]
+                        if complete_diag:
+                            if isinstance(complete_diag, list):
+                                all_diagnoses.extend([str(d).strip() for d in complete_diag if d and str(d).strip()])
+                            else:
+                                diag_str = str(complete_diag).strip()
+                                if diag_str:
+                                    all_diagnoses.append(diag_str)
+                        
+                        # Process primary_diagnoses (array)
+                        primary_diag = record["primary_diagnoses"]
+                        if primary_diag:
+                            if isinstance(primary_diag, list):
+                                all_diagnoses.extend([str(d).strip() for d in primary_diag if d and str(d).strip()])
+                            else:
+                                diag_str = str(primary_diag).strip()
+                                if diag_str:
+                                    all_diagnoses.append(diag_str)
+                        
+                        # Process secondary_diagnoses (array)
+                        secondary_diag = record["secondary_diagnoses"]
+                        if secondary_diag:
+                            if isinstance(secondary_diag, list):
+                                all_diagnoses.extend([str(d).strip() for d in secondary_diag if d and str(d).strip()])
+                            else:
+                                diag_str = str(secondary_diag).strip()
+                                if diag_str:
+                                    all_diagnoses.append(diag_str)
+                    
+                    # Remove duplicates while preserving order (case-insensitive)
+                    seen = set()
+                    unique_diagnoses = []
+                    for diag in all_diagnoses:
+                        diag_lower = diag.lower()
+                        if diag_lower not in seen and diag:  # Also filter out empty strings
+                            seen.add(diag_lower)
+                            unique_diagnoses.append(diag)
+                    
+                    # Update Patient node with aggregated diagnoses
+                    if unique_diagnoses:
+                        update_query = """
+                        MATCH (p:Patient {subject_id: $subject_id})
+                        SET p.all_diagnoses = $all_diagnoses
+                        RETURN p
+                        """
+                        
+                        session.run(update_query, 
+                                   subject_id=subject_id,
+                                   all_diagnoses=unique_diagnoses)
+                        
+                        updated_count += 1
+                        total_diagnoses += len(unique_diagnoses)
+                        logger.debug(f"Updated Patient {subject_id} with {len(unique_diagnoses)} unique diagnoses")
+                    else:
+                        skipped_count += 1
+                        logger.debug(f"No diagnoses found for Patient {subject_id}")
+                    
+                except Exception as e:
+                    logger.error(f"Error aggregating diagnoses for patient {subject_id}: {e}")
+                    skipped_count += 1
+                
+                pbar.update(1)
+            
+            pbar.close()
+            
+            logger.info(f"Patient Diagnosis Aggregation Summary:")
+            logger.info(f"  Patients updated: {updated_count}")
+            logger.info(f"  Total unique diagnoses across all patients: {total_diagnoses}")
+            logger.info(f"  Patients skipped: {skipped_count}")
+            
+    except Exception as e:
+        logger.error(f"Error aggregating patient diagnoses: {e}")
+        raise
+
 def create_diagnosis_nodes(tracker: Optional[ETLTracker] = None, pipeline_log_file: Optional[str] = None):
     # Setup logging based on whether pipeline_log_file is provided
     # Remove any existing handlers to avoid duplicates
@@ -354,6 +481,9 @@ def create_diagnosis_nodes(tracker: Optional[ETLTracker] = None, pipeline_log_fi
         
         # Process primary and secondary diagnoses from clinical notes
         add_primary_secondary_diagnoses(neo4j_conn)
+        
+        # Aggregate all diagnoses for each patient and update Patient nodes
+        aggregate_patient_diagnoses(neo4j_conn)
     finally:
         neo4j_conn.close()
 

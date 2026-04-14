@@ -7,6 +7,11 @@ import logging
 import sys
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env from project root (3 levels up: Streamlit_Application -> Scripts -> project root)
+_project_root = Path(__file__).resolve().parents[2]
+load_dotenv(_project_root / ".env")
 
 # Add Scripts directory to path for utils imports
 # Get the absolute path to the Scripts directory
@@ -32,6 +37,7 @@ from features.patient_similarity import render_similarity_tab
 from features.summarize_patient import render_summary_tab
 from features.chronological_patient_journey import render_patient_journey_tab
 from features.compare_patients import render_comparison_tab
+from features.diagnosis_similarity import render_diagnosis_similarity_tab
 
 # Configure logging
 logging.basicConfig(
@@ -49,12 +55,14 @@ st.set_page_config(
     page_title="Patient Analysis Dashboard",
     page_icon="🩺",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # Custom CSS
 st.markdown("""
     <style>
+    [data-testid="collapsedControl"] { display: none; }
+    [data-testid="stSidebar"] { display: none; }
     .main-header {
         font-size: 2.5rem;
         font-weight: bold;
@@ -130,82 +138,11 @@ def main():
         st.error("Failed to initialize Neo4j connection")
         return
     
-    # Sidebar
-    with st.sidebar:
-        st.header("⚙️ Configuration")
-        
-        # Gemini API Keys configuration
-        st.subheader("🔑 Gemini API Keys")
-        st.info("""
-        For patient summarization and comparison, you need Gemini API keys.
-        Add keys separated by commas or set GEMINI_API_KEYS environment variable.
-        """)
-        
-        api_keys_input = st.text_area(
-            "Enter Gemini API Keys (one per line or comma-separated):",
-            value="\n".join(st.session_state.get('gemini_api_keys', [])),
-            height=100,
-            help="You can add multiple keys for automatic rotation"
-        )
-        
-        if st.button("💾 Save API Keys"):
-            # Parse API keys
-            keys = []
-            for line in api_keys_input.split('\n'):
-                line = line.strip()
-                if line:
-                    # Handle comma-separated keys
-                    keys.extend([k.strip() for k in line.split(',') if k.strip()])
-            
-            # Also try to get from environment
-            env_keys = get_gemini_api_keys()
-            if env_keys and not keys:
-                keys = env_keys
-            
-            if keys:
-                st.session_state['gemini_api_keys'] = keys
-                st.success(f"✅ Saved {len(keys)} API key(s)")
-            else:
-                st.warning("⚠️ No valid API keys entered")
-        
-        # Show current API keys count
-        current_keys = st.session_state.get('gemini_api_keys', [])
-        if current_keys:
-            st.info(f"📌 {len(current_keys)} API key(s) configured")
-        else:
-            # Try to load from environment
-            env_keys = get_gemini_api_keys()
-            if env_keys:
-                st.session_state['gemini_api_keys'] = env_keys
-                st.info(f"📌 {len(env_keys)} API key(s) loaded from environment")
-        
-        st.markdown("---")
-        
-        st.header("ℹ️ About")
-        st.markdown("""
-        This application provides four features:
-        
-        **1. Find Similar Patients**
-        - Uses Neo4j vector similarity search
-        - Based on patient text embeddings
-        - Results ranked by similarity score
-        
-        **2. Summarize Patient**
-        - Extracts knowledge graph structure
-        - Uses AI (Gemini) to generate clinical summary
-        - Comprehensive 1000-word report
-        
-        **3. Compare Patients**
-        - Compares two patients' clinical journeys
-        - Uses AI (Gemini) to identify similarities and differences
-        - Includes temporal sequence analysis
-        - Comprehensive comparison report
-        
-        **4. Patient Journey**
-        - Displays complete chronological patient journey
-        - Shows all events in temporal order
-        - Download as formatted PDF report
-        """)
+    # Auto-load Gemini API keys from environment
+    if not st.session_state.get('gemini_api_keys'):
+        env_keys = get_gemini_api_keys()
+        if env_keys:
+            st.session_state['gemini_api_keys'] = env_keys
     
     # Use query parameters to track and preserve active tab
     query_params = st.query_params
@@ -215,11 +152,12 @@ def main():
     should_stay_on_compare = query_params.get('tab') == 'compare' or st.session_state.get('generating_comparison', False)
     
     # Create tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "🔍 Find Similar Patients", 
         "📋 Summarize Patient",
         "🔬 Compare Patients",
-        "📅 Patient Journey"
+        "📅 Patient Journey",
+        "🏥 Find by Diagnosis"
     ])
     
     # Inject JavaScript early to switch tab if needed (before rendering content)
@@ -352,6 +290,9 @@ def main():
     
     with tab4:
         render_patient_journey_tab(connection)
+    
+    with tab5:
+        render_diagnosis_similarity_tab(connection)
     
     # Footer
     st.markdown("---")
