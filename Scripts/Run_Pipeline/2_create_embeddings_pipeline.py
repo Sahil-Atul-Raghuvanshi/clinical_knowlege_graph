@@ -22,6 +22,10 @@ sys.path.insert(0, str(embeddings_path))
 create_embeddings_dir = Path(__file__).parent.parent / 'Create_Embeddings'
 sys.path.insert(0, str(create_embeddings_dir))
 
+# Add diagnosis_embeddings directory to path
+diagnosis_embeddings_dir = create_embeddings_dir / 'diagnosis_embeddings'
+sys.path.insert(0, str(diagnosis_embeddings_dir))
+
 # Import ETL tracker for incremental loading
 scripts_dir = Path(__file__).parent.parent  # Scripts directory
 sys.path.insert(0, str(scripts_dir))
@@ -33,6 +37,13 @@ except ImportError:
 # Import new embedding system modules
 from embedding_pipeline import PatientEmbeddingPipeline
 from utils.config import Config
+
+# Import diagnosis embeddings module
+try:
+    from create_diagnosis_embeddings import create_diagnosis_embeddings
+except ImportError as e:
+    create_diagnosis_embeddings = None
+    # Logger not yet initialized, will log warning later
 
 # Setup logging
 # Get project root and create logs directory
@@ -58,13 +69,19 @@ logger.info(f"Log file: {log_file}")
 
 # Print to console only for critical messages (progress bar will show via tqdm)
 print(f"Embedding pipeline started. Logs: {log_file}")
-print("Processing patients... (see progress bar below)")
+print("Processing patients and diagnoses... (see progress bar below)")
 
 # Log ETL tracker availability
 if ETLTracker is None:
     logger.warning("ETLTracker not found. Incremental loading will be disabled.")
 else:
     logger.info("ETLTracker available. Incremental loading enabled.")
+
+# Log diagnosis embeddings module availability
+if create_diagnosis_embeddings is None:
+    logger.warning("create_diagnosis_embeddings module not found. Diagnosis embeddings will be skipped.")
+else:
+    logger.info("Diagnosis embeddings module available. Will generate diagnosis embeddings after patient embeddings.")
 
 
 class BatchProgress:
@@ -143,9 +160,9 @@ class LargeScaleBatchPipeline:
         self.tracker = tracker
         self.tracker_file = tracker_file
         
-        logger.info("Initializing Patient Embedding Pipeline")
+        logger.info("Initializing Embedding Pipeline")
         logger.info(f"Batch size: {config.batch_processing.batch_size}")
-        logger.info("Using Neo4j for patient node embeddings")
+        logger.info("Using Neo4j for patient and diagnosis embeddings")
         if tracker or tracker_file:
             logger.info("Incremental load mode: ENABLED (using ETL tracker)")
         else:
@@ -201,12 +218,25 @@ class LargeScaleBatchPipeline:
         
         try:
             # Generate patient embeddings
-            logger.info("\nGenerating patient embeddings...")
+            logger.info("\n[Step 1/2] Generating patient embeddings...")
             self.pipeline.generate_patient_embeddings(
                 patient_ids=patient_ids,
                 batch_size=self.config.batch_processing.batch_size,
                 force=False
             )
+            
+            # Generate diagnosis embeddings
+            if create_diagnosis_embeddings:
+                logger.info("\n[Step 2/2] Generating diagnosis embeddings...")
+                pipeline_log_file = str(log_file)
+                create_diagnosis_embeddings(
+                    tracker=self.tracker,
+                    pipeline_log_file=pipeline_log_file,
+                    patient_ids=patient_ids,
+                    force=False
+                )
+            else:
+                logger.warning("Diagnosis embeddings module not available. Skipping diagnosis embeddings generation.")
             
             elapsed = time.time() - start_time
             logger.info("\n" + "=" * 80)
@@ -239,21 +269,44 @@ class LargeScaleBatchPipeline:
         
         try:
             # Generate patient embeddings
-            logger.info("\nGenerating patient embeddings...")
+            logger.info("\n[Step 1/2] Generating patient embeddings...")
+            patient_start_time = time.time()
             self.pipeline.generate_patient_embeddings(
                 patient_ids=None,  # Process all patients
                 batch_size=self.config.batch_processing.batch_size,
                 force=force_patients
             )
+            patient_elapsed = time.time() - patient_start_time
+            logger.info(f"Patient embeddings completed in {patient_elapsed/3600:.2f} hours")
+            
+            # Generate diagnosis embeddings
+            diagnosis_elapsed = 0
+            if create_diagnosis_embeddings:
+                logger.info("\n[Step 2/2] Generating diagnosis embeddings...")
+                diagnosis_start_time = time.time()
+                pipeline_log_file = str(log_file)
+                create_diagnosis_embeddings(
+                    tracker=self.tracker,
+                    pipeline_log_file=pipeline_log_file,
+                    patient_ids=None,  # Process all patients
+                    force=force_patients
+                )
+                diagnosis_elapsed = time.time() - diagnosis_start_time
+                logger.info(f"Diagnosis embeddings completed in {diagnosis_elapsed/3600:.2f} hours")
+            else:
+                logger.warning("Diagnosis embeddings module not available. Skipping diagnosis embeddings generation.")
             
             # Final summary
             total_elapsed = time.time() - total_start_time
             
             logger.info("\n" + "=" * 80)
-            logger.info("PATIENT EMBEDDING PIPELINE COMPLETED")
+            logger.info("EMBEDDING PIPELINE COMPLETED")
             logger.info("=" * 80)
             logger.info(f"Total time: {total_elapsed/3600:.2f} hours")
-            logger.info("Patient embeddings stored in Neo4j")
+            logger.info(f"  - Patient embeddings: {patient_elapsed/3600:.2f} hours")
+            if create_diagnosis_embeddings and diagnosis_elapsed > 0:
+                logger.info(f"  - Diagnosis embeddings: {diagnosis_elapsed/3600:.2f} hours")
+            logger.info("All embeddings stored in Neo4j")
             
         except Exception as e:
             logger.error(f"Pipeline failed: {e}", exc_info=True)
@@ -278,6 +331,7 @@ def main():
     logger.info("=" * 80)
     logger.info("EXECUTION MODE: BATCH")
     logger.info("Running in BATCH mode - processing full dataset")
+    logger.info("Pipeline includes: Patient embeddings + Diagnosis embeddings")
     logger.info("=" * 80)
     
     # Load config

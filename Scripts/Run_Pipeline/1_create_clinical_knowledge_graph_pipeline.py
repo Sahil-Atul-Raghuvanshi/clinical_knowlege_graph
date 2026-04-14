@@ -189,7 +189,7 @@ def main():
     # Scripts will receive tracker and pipeline_log_file as parameters
     pipeline = [
         # Clinical note processing (must run first)
-        ("convert_text_clinical_note_to_json_using_logic.py", lambda: script48.main()),
+        ("convert_text_clinical_note_to_json", lambda: script48.main()),
         ("49_clinical_notes_flatenning.py", lambda: script49.main()),
         
         # Data loading scripts (with tracker and log file support where applicable)

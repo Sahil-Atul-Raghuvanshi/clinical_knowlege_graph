@@ -26,27 +26,41 @@ import json
 import google.generativeai as genai
 import os
 import time
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env from the project root (3 levels up from this script)
+_project_root = Path(__file__).resolve().parents[3]
+load_dotenv(_project_root / ".env")
 
 # ═══════════════════════════════════════════════════════════════
-# CONFIGURATION: Add Your API Keys Here
+# CONFIGURATION: API keys loaded from .env
+# Primary key  : GEMINI_API_KEY
+# Backup keys  : GEMINI_API_KEY_2, GEMINI_API_KEY_3, ... (optional)
 # ═══════════════════════════════════════════════════════════════
-# Add your API keys below - the script will rotate through them if one hits rate limits
-API_KEYS = [
-    'AIzaSyCRFuHHqXIeRDiDNE_TGr27iWciLkJ0QjU',
-    'AIzaSyDG9VKp-kD1y0-xT-5ivV7Ldni-YDR-wOk',  # Primary key
-    'AIzaSyDt0APSsM1N9G_7mpPhpJzNOB-8h3W4SNc',                    # Backup key 1
-    'AIzaSyCtkc5BuyPggHUWhoz_iNToHVDCs6Pn3Pc',  
-    'AIzaSyDE5Ck37g-cNIL9WCu_PIT91q1_ySuhNRY'                   # Backup key 2
-]
-# ═══════════════════════════════════════════════════════════════
+def _load_api_keys() -> list[str]:
+    keys = []
+    primary = os.getenv("GEMINI_API_KEY", "").strip()
+    if primary:
+        keys.append(primary)
+    index = 2
+    while True:
+        extra = os.getenv(f"GEMINI_API_KEY_{index}", "").strip()
+        if not extra:
+            break
+        keys.append(extra)
+        index += 1
+    return keys
 
-# Filter out placeholder keys
-API_KEYS = [key for key in API_KEYS if key and not key.startswith('YOUR_')]
+API_KEYS = _load_api_keys()
+# ═══════════════════════════════════════════════════════════════
 
 if not API_KEYS:
-    raise ValueError("Please provide at least one valid API key in the API_KEYS list")
+    raise ValueError(
+        "No Gemini API key found. Set GEMINI_API_KEY in your .env file."
+    )
 
-print(f"Loaded {len(API_KEYS)} API key(s)")
+print(f"Loaded {len(API_KEYS)} Gemini API key(s) from .env")
 
 # Global variable to track current API key index
 current_key_index = 0

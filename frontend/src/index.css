@@ -1,0 +1,115 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+  }
+  body {
+    @apply text-slate-800 font-sans;
+    background: linear-gradient(to bottom, #cfe4f5 0%, #eaf4fd 100%);
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  /* ── Spinner ─────────────────────────────────────────────────────── */
+  .spinner {
+    @apply inline-block w-6 h-6 border-4 border-clinical-200 border-t-clinical-600 rounded-full animate-spin;
+  }
+
+  /* ── Clinical card ───────────────────────────────────────────────── */
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-slate-100 p-5;
+  }
+
+  /* ── Section heading ─────────────────────────────────────────────── */
+  .section-heading {
+    @apply text-lg font-semibold text-clinical-800 border-b-2 border-clinical-200 pb-2 mb-4 flex items-center gap-2;
+  }
+
+  .subsection-heading {
+    @apply text-sm font-semibold text-slate-600 uppercase tracking-wider mb-2 mt-4;
+  }
+
+  /* ── Tag / badge ─────────────────────────────────────────────────── */
+  .tag {
+    @apply inline-block px-2 py-0.5 rounded text-xs font-medium;
+  }
+
+  /* ── Bullet list ─────────────────────────────────────────────────── */
+  .bullet-list li {
+    @apply flex items-start gap-2 text-sm text-slate-700 py-1;
+  }
+  .bullet-list li::before {
+    content: '•';
+    @apply text-clinical-500 font-bold mt-0 shrink-0;
+  }
+
+  /* ── Tab bar ─────────────────────────────────────────────────────── */
+  .tab-btn {
+    @apply flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap;
+  }
+  .tab-btn.active {
+    @apply border-clinical-600 text-clinical-700 bg-white;
+  }
+  .tab-btn.inactive {
+    @apply border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300;
+  }
+
+  /* ── Primary button ──────────────────────────────────────────────── */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-clinical-700 hover:bg-clinical-800 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition-colors;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 px-3 py-2 bg-red-50 border border-red-200 hover:bg-red-100 text-red-700 text-sm font-medium rounded-lg transition-colors;
+  }
+
+  .btn-teal {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+
+  /* ── Input ───────────────────────────────────────────────────────── */
+  .input {
+    @apply w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clinical-400 focus:border-transparent transition;
+  }
+  .textarea {
+    @apply w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clinical-400 focus:border-transparent transition resize-none;
+  }
+
+  /* ── Stat card ───────────────────────────────────────────────────── */
+  .stat-card {
+    @apply bg-clinical-50 border border-clinical-100 rounded-lg px-4 py-3 text-center;
+  }
+
+  /* ── Alert ───────────────────────────────────────────────────────── */
+  .alert-info    { @apply flex items-start gap-3 p-3 rounded-lg bg-clinical-50 border border-clinical-200 text-clinical-800 text-sm; }
+  .alert-success { @apply flex items-start gap-3 p-3 rounded-lg bg-green-50 border border-green-200 text-green-800 text-sm; }
+  .alert-warning { @apply flex items-start gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm; }
+  .alert-error   { @apply flex items-start gap-3 p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm; }
+
+  /* ── Lab abnormal highlight ──────────────────────────────────────── */
+  .abnormal { @apply text-red-600 font-medium; }
+
+  /* ── Timeline dot ────────────────────────────────────────────────── */
+  .timeline-dot {
+    @apply w-3 h-3 rounded-full shrink-0 mt-1;
+  }
+
+  /* ── Comparison column ───────────────────────────────────────────── */
+  .compare-col {
+    @apply flex-1 min-w-0 bg-clinical-50 rounded-lg p-4 border border-clinical-100;
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
